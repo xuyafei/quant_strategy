@@ -140,7 +140,9 @@ flowchart LR
 
 | 文件 | 作用 |
 |------|------|
-| `database.py` | **SQLite 表结构初始化**：定义 `prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot` 和 `storage_metadata`。第一版只建表和索引，不改变 `main.py` 的 CSV 缓存流程。 |
+| `database.py` | **SQLite 表结构初始化**：定义 `prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot` 和 `storage_metadata`，并为财务现金流字段提供轻量迁移。 |
+| `warehouse.py` | **SQLite 数据读写层**：支持行情、财务和因子面板 upsert、读取与导出 `prices_long.csv`、`prices_wide_close.csv`、`factor_panel.csv`，让数据库能服务现有回测缓存。 |
+| `inspection.py` | **SQLite 数据巡检层**：检查核心表行数、行情新鲜度、股票池覆盖、财务字段覆盖、因子覆盖率和导出缓存文件状态，并生成 CSV / Markdown 巡检日报。 |
 
 ---
 
@@ -249,6 +251,8 @@ flowchart LR
 |------|------|
 | `run_daily_paper.py` | **日终纸面交易脚本**：薄命令行入口，调用 `live.daily_paper_cli.main`。默认使用 `FUSED_ROLLING_SCORE_WEIGHTED`，支持 `--strategy`、`--trade-date`、`--trade-status`、`--risk-gate`、`--risk-blacklist`、`--drawdown-rules`、`--capacity-rules`、`--liquidity-history`、`--factor-decay-monitor`、`--execution-mode`、`--no-persist`、`--no-report`、`--no-manual-confirm`、`--no-guard`、`--max-price-age-days`、`--allow-non-trading-day`、`--allow-rerun`。 |
 | `init_database.py` | **SQLite 初始化入口**：调用 `storage.database.initialize_database`，生成 `data/quant_strategy.db` 及核心基础数据表。 |
+| `update_database_cache.py` | **数据库缓存更新入口**：把本地行情、财务和因子 CSV 增量写入 SQLite，并导出 `output/cache/` 下主流程兼容缓存。 |
+| `build_database_quality_report.py` | **数据库巡检入口**：调用 `storage.inspection`，生成 `output/database_quality/` 下的巡检 CSV 和 Markdown 报告。 |
 | `run_scheduled_daily_paper.py` | **每日调度入口**：薄命令行入口，调用 `live.paper_scheduler.run_scheduled_daily_paper`，把未识别参数透传给日终纸面交易 CLI，并写 `output/scheduler_logs/<date>.log`。 |
 | `reconcile_paper_broker.py` | **纸面 / 券商只读对账入口**：读取外部券商账户和持仓 CSV，构造只读 adapter，并与纸面账户状态生成差异报告。 |
 | `build_execution_feedback.py` | **真实成交回填入口**：读取人工确认单 CSV 中的 `executed_qty`、`executed_price` 等字段，生成执行偏差 CSV 与 Markdown 报告。 |

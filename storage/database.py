@@ -9,7 +9,7 @@ from typing import Iterable
 from config import Settings
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 CORE_TABLES = (
     "prices_daily",
@@ -50,7 +50,18 @@ DDL_STATEMENTS = (
         or_yoy REAL,
         netprofit_yoy REAL,
         ocfps REAL,
+        cfps REAL,
         fcff REAL,
+        fcff_ps REAL,
+        fcfe_ps REAL,
+        free_cashflow_ps REAL,
+        ocf_to_profit REAL,
+        ocf_to_opincome REAL,
+        salescash_to_or REAL,
+        ocf_to_or REAL,
+        q_ocf_to_sales REAL,
+        netprofit_cash_cover REAL,
+        cashflow_to_profit REAL,
         eps REAL,
         pe_ttm REAL,
         source TEXT DEFAULT '',
@@ -121,6 +132,22 @@ DDL_STATEMENTS = (
     """,
 )
 
+TABLE_COLUMN_MIGRATIONS = {
+    "fina_indicator": {
+        "cfps": "REAL",
+        "fcff_ps": "REAL",
+        "fcfe_ps": "REAL",
+        "free_cashflow_ps": "REAL",
+        "ocf_to_profit": "REAL",
+        "ocf_to_opincome": "REAL",
+        "salescash_to_or": "REAL",
+        "ocf_to_or": "REAL",
+        "q_ocf_to_sales": "REAL",
+        "netprofit_cash_cover": "REAL",
+        "cashflow_to_profit": "REAL",
+    }
+}
+
 
 INDEX_STATEMENTS = (
     "CREATE INDEX IF NOT EXISTS idx_prices_daily_symbol_date ON prices_daily (ts_code, trade_date)",
@@ -154,6 +181,14 @@ def initialize_database(path: str | Path) -> Path:
             conn.execute(statement)
         for statement in INDEX_STATEMENTS:
             conn.execute(statement)
+        for table, columns in TABLE_COLUMN_MIGRATIONS.items():
+            existing = {
+                str(row[1])
+                for row in conn.execute("PRAGMA table_info(%s)" % table).fetchall()
+            }
+            for column, column_type in columns.items():
+                if column not in existing:
+                    conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, column_type))
         conn.execute(
             """
             INSERT INTO storage_metadata(key, value, updated_at)

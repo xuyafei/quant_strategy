@@ -14,7 +14,7 @@
 **已跑通**：
 
 - 行情：`data/prices_demo.csv`、Tushare 日线本地缓存、Excel/CSV 股票池驱动的 Tushare 多标的日线，或合成宽表兜底。
-- 数据库：`storage.database` 可初始化 `data/quant_strategy.db`，核心表为 `prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot`。当前定位是长期基础数据层，`output/` 继续保存单次运行结果。
+- 数据库：`storage.database` 可初始化 `data/quant_strategy.db`，核心表为 `prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot`。`storage.warehouse` 支持行情、财务和因子面板 upsert、读取与缓存导出；`storage.inspection` 支持数据库巡检日报；当前定位是长期基础数据层，`output/` 继续保存单次运行结果。
 - 财务：`fina_indicator` 拉取并与交易日对齐（PE、ROE、毛利率、净利率、资产负债率、营收增长、利润增长、自由现金流收益率代理、经营现金流质量等）。
 - 因子：`factors/panel_builder.build_four_factor_panel` 一次性产出基础多列（短/长动量、短反转、低波、成交量放大、PE、ROE、毛利率、净利率、低资产负债率、营收增长、利润增长、自由现金流收益率代理、经营现金流质量、公告事件得分）；公告事件因子默认读取 `data/announcement_events.csv` 或 `QUANT_ANNOUNCEMENT_EVENT_PATH` 指定文件，按公告日向后衰减；若 `enable_ml_score=True`，`factors.factor_ml.build_ml_score_factor` 会用这些基础因子滚动训练梯度提升类模型，追加 `ML_SCORE` 作为机器学习打分因子；`main` 中单因子回测 **传入预计算 `factor_values`**（不重复算子）。`run_single_backtest` 仍支持仅传 `factor_name` 走注册表自动算子。
 - 因子预处理：`factors.preprocess` 按交易日横截面对每列因子做 winsorize 与 z-score；若 `factor_standardize_by_industry=True` 且存在 `industry_col`，会先在同一交易日同一行业内标准化，行业样本不足时回退全股票池横截面 z-score。`main` 保留原始 `factor_panel.csv` 做覆盖率和审计，IC、因子诊断、样本外验证、单因子回测与融合回测使用标准化后的研究面板，并生成 `factor_panel_zscore.csv`。
@@ -89,7 +89,11 @@
 | `live/stock_pool.py` | `load_stock_pool_frame`、`build_stock_pool_filter_report`、`active_universe_from_report`、`save_universe_files`：读取人工股票池，保留主题/启用状态，按价格覆盖、流动性、停牌 / 涨跌停生成过滤报告与 active universe。 |
 | `live/cache_io.py` | `save_run_cache` → `output/cache/` 行情、原始因子面板与标准化因子面板；`save_data_quality_reports`、`save_factor_diagnostics`、`save_run_config`、`save_performance_summary`、`save_rebalance_logs`、`save_decision_logs`、`save_turnover_logs`、`save_order_plans`、`save_order_checks`、`save_paper_trades`、`save_risk_exposure_logs`、`save_risk_exposure_summary` → 实验运行记录。 |
 | `storage/database.py` | `initialize_database`、`list_database_tables`、`get_table_columns`：初始化本地 SQLite 表结构和索引；默认数据库路径为 `data/quant_strategy.db`，可通过 `QUANT_DATABASE_PATH` 覆盖。 |
+| `storage/warehouse.py` | `upsert_prices_daily`、`upsert_fina_indicator`、`upsert_factor_panel_daily`、`export_price_cache`、`export_factor_panel_cache`：把本地缓存写入 SQLite，并导出兼容当前主流程的 `output/cache` CSV。 |
+| `storage/inspection.py` | `build_database_quality_report`、`save_database_quality_report`：生成表级、行情、财务、因子和缓存文件巡检结果，并汇总 `PASS/WATCH/BLOCK/NA`。 |
 | `scripts/init_database.py` | SQLite 初始化入口：创建行情、财务、因子、公告、新闻和股票池快照等长期基础数据表。 |
+| `scripts/update_database_cache.py` | 数据库缓存更新入口：把行情、财务和因子 CSV 增量写入 SQLite，并导出 `prices_long.csv`、`prices_wide_close.csv`、`factor_panel.csv`。 |
+| `scripts/build_database_quality_report.py` | 数据库巡检入口：生成 `output/database_quality/` 下的巡检 CSV 和 Markdown 报告。 |
 | `live/account_state.py` | `save_account_state`、`load_account_state`、`positions_from_trades`：保存 / 读取纸面账户现金、持仓和每日快照。 |
 | `live/order_builder.py` | `build_order_plan`、`build_order_plan_from_rebalance_meta`：把目标权重转换成买卖股数和预估金额，是订单预检查、纸面交易和券商接口之前的准实盘准备层。 |
 | `live/drawdown_control.py` | `check_drawdown_control`、`apply_drawdown_control_to_weights`：根据纸面账户历史峰值计算回撤，并在订单生成前按规则缩放目标仓位。 |
@@ -315,7 +319,7 @@
 |------|------|
 | 作图 | `plot_nav` / `plot_ic` / `plot_weights`；`persist_run_outputs` 时写 IC 与权重 PNG（见 `main`）。 |
 | 实盘链路 | `scripts/build_live_universe.py` 已提供实盘目标池确认，`scripts/run_daily_paper.py` 已提供日终纸面命令，`live.risk_control_report` 已提供风险总控日报，`live.paper_report` 已提供带因子健康状态、风格暴露和总控结论的日报，`live.style_exposure_monitor` 已提供日报风格暴露读取，`live.manual_confirmation` 已提供人工确认单，`live.execution_feedback` 已提供真实成交回填与执行偏差分析，`live.paper_guard` 已提供运行异常检查，`live.paper_run_control` 已提供交易日日历与重复运行保护，`scripts/run_scheduled_daily_paper.py` 已提供系统调度入口，`live.broker` 已提供统一券商接口、模拟券商和真实券商只读骨架，`live.broker_factory` 已提供券商通道选择入口，`live.broker_reconcile` 已提供纸面 / 真实账户只读对账，日终流程已可通过 `--execution-mode simulated_broker` 使用该接口；后续补具体券商 API 同步与真实交易 adapter。 |
-| 数据存储 | `storage.database` 已提供 SQLite 表结构初始化；后续补每日增量更新、upsert 和从数据库导出 `output/cache` 的桥接脚本。 |
+| 数据存储 | `storage.database` 已提供 SQLite 表结构初始化；`storage.warehouse` 与 `scripts/update_database_cache.py` 已补每日增量 upsert 和从数据库导出 `output/cache` 的桥接脚本；`storage.inspection` 与 `scripts/build_database_quality_report.py` 已补数据库巡检日报。 |
 | 融合扩展 | `fuse_models` 更多 `method`（如 `dynamic`、`xgboost`）。 |
 | 数据 | 启动时读 `output/cache` 命中则跳过 Tushare；或规范落盘至 `data/`。 |
 | 检验 | 扩展 `unittest`/`pytest`（含 `tests/test_optimizer.py`、`test_backtest_*`、`test_plotting.py`、`test_fusion.py`）。 |

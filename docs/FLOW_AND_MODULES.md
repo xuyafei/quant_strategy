@@ -238,7 +238,7 @@ flowchart TB
 
 | 顺序 | 位置 | 做什么 | 意义 |
 |------|------|--------|------|
-| 0 | `storage.database` / `scripts/init_database.py` | 初始化本地 SQLite 表结构：`prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot` | 把长期基础数据和一次性实验输出分开，先有稳定数据底座，再做每日增量更新 |
+| 0 | `storage.database` / `storage.warehouse` / `storage.inspection` / `scripts/init_database.py` / `scripts/update_database_cache.py` / `scripts/build_database_quality_report.py` | 初始化本地 SQLite 表结构；把行情、财务和因子面板按主键 upsert 到数据库；再导出 `output/cache/prices_long.csv`、`prices_wide_close.csv`、`factor_panel.csv`；生成数据库巡检日报 | 把长期基础数据和一次性实验输出分开，同时用缓存导出兼容现有 `main.py` 和日终纸面交易，并在每日运行前检查数据是否可用 |
 | 1 | `config.get_settings()` | 读路径、区间、`top_k`、费率、`portfolio_weighting`、IC 前瞻天数等 | 集中参数，避免魔法数 |
 | 2 | `live/stock_pool` + `live/data_feed` + `backtest_utils` | 优先本地 demo / Tushare 缓存；否则从 Excel/CSV 股票池读取标的并拉取 Tushare 日线，得到 `long_df`、`prices` 宽表 | 摆脱默认示例股票池，统一真实股票池、行情缓存与回测数据形态 |
 | 3 | `factors/panel_builder` | 计算动量、长动量、短反转、低波、成交量放大、PE、ROE、毛利率、净利率、低资产负债率、营收增长、利润增长、自由现金流收益率代理、经营现金流质量、公告事件得分等基础列 | **Alpha/打分**：谁相对更值得持有（仅使用 ≤当日 信息） |
@@ -303,7 +303,7 @@ flowchart TB
 ## 3. 关键概念对照
 
 - **再平衡（`rebalance_freq`，默认 `ME`）**：仅在 **每个自然月末的最后一个交易日**（与行情索引交集）触发；当日读取因子截面、执行选股与调仓逻辑，非再平衡日只估值、不调仓。  
-- **数据存储工程化（`storage.database`）**：SQLite 默认路径为 `data/quant_strategy.db`，用于长期保存行情、财务、因子、公告、新闻和股票池快照等基础数据；`output/` 继续保存单次运行的缓存、回测、日报和图片。第一版只建表，不改变现有 CSV 缓存流程。
+- **数据存储工程化（`storage.database` / `storage.warehouse` / `storage.inspection`）**：SQLite 默认路径为 `data/quant_strategy.db`，用于长期保存行情、财务、因子、公告、新闻和股票池快照等基础数据；`storage.warehouse` 支持行情、财务和因子面板 upsert、读取与导出 `output/cache` 兼容缓存；`storage.inspection` 生成数据库巡检日报，检查表结构、行情新鲜度、股票池覆盖、财务字段覆盖、因子覆盖率和缓存文件状态；`output/` 继续保存单次运行的缓存、回测、日报和图片。
 - **Top-K 选股**：在再平衡日，对因子值 **降序** 排列，在有效价、有效因子条件下取前 `k` 只；**每期名单可变**，记录在 `meta["rebalance_log"]`。  
 - **可交易性 / 流动性过滤**：若 `Settings.min_avg_volume` 或 `Settings.min_avg_amount` 为正，回测会在 Top-K 前按过去 `Settings.liquidity_lookback_days` 的平均成交量 / 成交额过滤候选股票。过滤前后候选数会写入 `rebalance_log`，方便判断当期策略是否因为流动性不足而无法选满。
 - **停牌 / 涨跌停约束**：若 `Settings.enable_trade_status_filter=True`，回测读取 `is_suspended`、`is_limit_up`、`is_limit_down`。停牌不能买卖，涨停不能买入 / 加仓，跌停不能卖出 / 减仓；被阻断的动作会写入 `decision_log.trade_block_reason`。

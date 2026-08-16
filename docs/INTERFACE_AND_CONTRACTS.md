@@ -27,6 +27,12 @@
 python scripts/init_database.py
 ```
 
+增量写库与缓存导出入口：
+
+```bash
+python scripts/update_database_cache.py
+```
+
 核心表契约：
 
 | 表名 | 主键 | 用途 |
@@ -38,6 +44,19 @@ python scripts/init_database.py
 | `news_sentiment` | `item_key` | 新闻舆情；用于新闻日频因子与负面舆情风险过滤 |
 | `universe_snapshot` | `(snapshot_date, universe_name, ts_code)` | 股票池快照；记录候选池、启用状态、行业主题与剔除原因 |
 | `storage_metadata` | `key` | 数据库元信息；当前记录 `schema_version` |
+
+读写接口：
+
+| 函数 | 输入 | 输出 |
+|------|------|------|
+| `storage.warehouse.upsert_prices_daily` | 行情长表，含 `trade_date/ts_code/open/high/low/close`，可选 `volume/amount` | 写入 `prices_daily`，同一 `(trade_date, ts_code)` 重复时更新 |
+| `storage.warehouse.load_prices_daily` | 数据库路径、日期区间、可选股票列表 | 行情长表 |
+| `storage.warehouse.export_price_cache` | 数据库路径、输出目录、日期区间、可选股票列表 | `prices_long.csv` 与 `prices_wide_close.csv` |
+| `storage.warehouse.upsert_fina_indicator` | 财务指标表，含 `ts_code/ann_date`，可选 `end_date` 与各类财务字段 | 写入 `fina_indicator`，同一 `(ts_code, ann_date, end_date)` 重复时更新 |
+| `storage.warehouse.upsert_factor_panel_daily` | MultiIndex 因子面板或含 `date/symbol` 的宽表 | 写入 `factor_panel_daily` 长表 |
+| `storage.warehouse.export_factor_panel_cache` | 数据库路径、输出目录、日期区间、可选股票列表 | `factor_panel.csv` |
+| `storage.inspection.build_database_quality_report` | 数据库路径、可选股票池、巡检日期、缓存目录 | 表级、行情、财务、因子、缓存文件巡检 DataFrame |
+| `storage.inspection.save_database_quality_report` | 数据库路径、输出目录、可选股票池 / 巡检日期 / 缓存目录 | `output/database_quality/*.csv` 与 `database_quality_report.md` |
 
 数据库与 CSV / 输出目录的边界：
 
@@ -122,6 +141,8 @@ python scripts/init_database.py
 | `live.data_feed` | `get_data_tushare(symbol, start, end, ...)` | 合法 `ts_code`、ISO 日期 | 满足 §2.1 列规范的 `pd.DataFrame`（可含额外列） |
 | `live.data_feed` | `load_prices_from_csv(path_or_glob)` | 磁盘路径 | 长表或宽表 + 元数据说明（推荐返回 long 并标准化列名） |
 | `live.cache_io` | `save_run_cache(settings, long_df, prices_wide, panel, panel_zscore=None)` | `Settings`、行情、原始因子面板与可选标准化面板 | 写 `output/cache/` 下 `prices_long.csv`、`factor_panel.csv`、`factor_panel_zscore.csv` 等 |
+| `storage.warehouse` | `upsert_prices_daily`、`upsert_fina_indicator`、`upsert_factor_panel_daily`、`export_price_cache`、`export_factor_panel_cache` | 行情、财务、因子面板 DataFrame 与 SQLite 路径 | 按主键增量写入 SQLite，并导出当前 `main.py` / 日终纸面交易兼容缓存 |
+| `storage.inspection` | `build_database_quality_report`、`save_database_quality_report` | SQLite 路径、可选股票池、巡检日期、缓存目录 | 生成数据库巡检明细与 Markdown 日报，只检查不改变交易逻辑 |
 | `live.cache_io` | `save_run_config`、`save_performance_summary`、`save_rebalance_logs`、`save_decision_logs`、`save_turnover_logs`、`save_order_plans`、`save_order_checks`、`save_paper_trades`、`save_risk_exposure_logs`、`save_risk_exposure_summary`、`save_data_quality_reports`、`save_factor_diagnostics` | `Settings`、绩效 dict、回测 meta、换手表、订单计划、订单预检查结果、纸面交易日志、集中度表、数据质量表、因子诊断表 | 写 `run_config.json`、`performance_summary.csv`、`rebalance_logs/*.csv`、`decision_logs/*.csv`、`turnover_logs/*.csv`、`order_plans/*.csv`、`order_checks/*.csv`、`paper_trades/*.csv`、`risk_exposure/*.csv`、`data_quality/*.csv`、`factor_diagnostics/*.csv` |
 | `factors.factor_*` | `calc_*(..., **kwargs)` | 行情/财务 DataFrame 或 PanelLong；财务扩展因子按 `ann_date` backward 对齐到交易日 | `PanelLong`（Series 或单列表 DataFrame） |
 | `factors.factor_ml` | `forward_return_label(prices, forward_days=...)`、`build_ml_score_factor(panel, prices, settings, feature_cols=...)` | 基础因子面板、价格宽表、`Settings.ml_score_*` 配置；训练样本只允许使用预测日前已经能观察到完整 forward return 的历史样本 | `ML_SCORE` Series 与训练日志 DataFrame；`main` 会把 `ML_SCORE` 追加进因子面板，训练日志可写 `output/factor_diagnostics/ml_score_training_log.csv` |

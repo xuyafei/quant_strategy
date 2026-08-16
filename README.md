@@ -46,7 +46,7 @@ models/         # fusion、factor_weighting、optimizer
 analysis/       # performance、benchmark、turnover、risk_exposure、data_quality、factor_diagnostics、factor_validation、market_regime、plotting、ic
 live/           # data_feed、stock_pool、cache_io、order_builder、drawdown_control、capacity_impact、order_precheck、risk_blacklist、risk_gate、risk_limits、stress_test、risk_control_report、announcement_source、news_source、event_risk_filter、negative_sentiment_filter、paper_trading、broker、account_state、paper_runner、paper_report、factor_health_report、manual_confirmation、execution_feedback、paper_guard、paper_run_control、daily_paper_cli；signal 非 MVP 占位
 storage/        # SQLite 表结构与后续数据库读写层
-scripts/        # init_database.py、build_live_universe.py、fetch_tushare_announcements.py、fetch_akshare_stock_news.py、build_event_risk_filter.py、build_announcement_event_type_analysis.py、build_announcement_event_type_backtest.py、build_announcement_event_type_risk_filter_backtest.py、build_negative_sentiment_filter.py、build_drawdown_control.py、build_capacity_impact.py、build_portfolio_risk_limits.py、build_portfolio_stress_tests.py、run_daily_paper.py、build_execution_feedback.py、run_scheduled_daily_paper.py 等日常运行入口
+scripts/        # init_database.py、update_database_cache.py、build_database_quality_report.py、build_live_universe.py、fetch_tushare_announcements.py、fetch_akshare_stock_news.py、build_event_risk_filter.py、build_announcement_event_type_analysis.py、build_announcement_event_type_backtest.py、build_announcement_event_type_risk_filter_backtest.py、build_negative_sentiment_filter.py、build_drawdown_control.py、build_capacity_impact.py、build_portfolio_risk_limits.py、build_portfolio_stress_tests.py、run_daily_paper.py、build_execution_feedback.py、run_scheduled_daily_paper.py 等日常运行入口
 config.py
 main.py
 ```
@@ -82,9 +82,75 @@ news_sentiment        新闻舆情
 universe_snapshot     股票池快照
 ```
 
+### 数据库缓存更新
+
+第 96 篇之后，SQLite 可以开始参与主流程前的数据准备。脚本会读取本地行情 / 财务 / 因子 CSV，按主键 upsert 到 SQLite，再导出当前 `main.py` 和日终纸面交易仍然兼容的缓存文件：
+
+```bash
+python scripts/update_database_cache.py
+```
+
+常用参数：
+
+```bash
+python scripts/update_database_cache.py \
+  --prices-csv data/prices_tushare_cache.csv \
+  --fina-csv data/fina_indicator_cache.csv \
+  --factor-panel-csv output/cache/factor_panel.csv \
+  --start 2025-01-01 \
+  --end 2026-08-15
+```
+
+导出结果：
+
+```text
+output/cache/prices_long.csv
+output/cache/prices_wide_close.csv
+output/cache/factor_panel.csv
+```
+
+这一步仍然不强制改造 `main.py`：数据库作为数据底座，导出的缓存作为兼容层。
+
+### 数据库巡检日报
+
+第 97 篇之后，可以对 SQLite 数据库和导出缓存做日常巡检：
+
+```bash
+python scripts/build_database_quality_report.py
+```
+
+常用参数：
+
+```bash
+python scripts/build_database_quality_report.py \
+  --database data/quant_strategy.db \
+  --stock-pool data/stock_pool.xlsx \
+  --as-of-date 2026-08-16
+```
+
+输出目录：
+
+```text
+output/database_quality/
+```
+
+核心输出：
+
+```text
+table_summary.csv
+price_health.csv
+fina_health.csv
+factor_health.csv
+cache_file_health.csv
+summary.csv
+database_quality_report.md
+```
+
+巡检日报只做检查，不改变回测、调仓或订单。它回答的是：数据库里的数据是否完整、新鲜、可用，导出的缓存是否足够支撑当天运行。
+
 ### 当前 `main.py` 实际顺序（与代码一致）
 
-0. **数据存储工程化**：`storage.database` 定义本地 SQLite 表结构，`scripts/init_database.py` 可初始化 `prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot`。第一版不替代现有 CSV 缓存；数据库用于长期基础数据，`output/` 继续保存每次实验、日报和图表。
+0. **数据存储工程化**：`storage.database` 定义本地 SQLite 表结构，`scripts/init_database.py` 可初始化 `prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot`。`storage.warehouse` 提供行情、财务和因子面板 upsert、读取和缓存导出；`scripts/update_database_cache.py` 可把本地 CSV 缓存增量写入 SQLite，再导出 `output/cache/prices_long.csv`、`prices_wide_close.csv` 和 `factor_panel.csv`；`storage.inspection` 与 `scripts/build_database_quality_report.py` 生成数据库巡检日报，检查表结构、行情新鲜度、财务覆盖、因子覆盖和缓存文件状态。
 1. **数据**：`data/prices_demo.csv` 优先；否则读取 Tushare 行情缓存；若缓存不存在，则从 `Settings.stock_pool_path` 指定的 Excel/CSV 股票池读取标的并拉取 Tushare 日线，同时写入 `Settings.tushare_price_cache_path`；若股票池不存在才使用 `main._DEFAULT_TS_SYMBOLS` 示例股票池；失败则合成宽表。得到 `prices`（宽表）与 `long_df`。
 2. **基础因子面板**：`factors.panel_builder.build_four_factor_panel`（历史命名保留；当前默认十五列：`MOMENTUM`、`MOMENTUM_60D`、`REVERSAL_5D`、`VOLATILITY`、`VOLUME_RATIO_20D`、`PE`、`ROE`、`GROSS_MARGIN`、`NET_MARGIN`、`LOW_DEBT_TO_ASSETS`、`REVENUE_GROWTH`、`PROFIT_GROWTH`、`FREE_CASH_FLOW_YIELD`、`CASH_PROFIT_QUALITY`、`ANNOUNCEMENT_EVENT_SCORE`）。公告事件因子默认读取 `data/announcement_events.csv`，文件不存在时该列为空；`factors.factor_events.calc_announcement_event_type_scores` 可把同一公告表拆成回购、减持、问询处罚、分红、合同项目等类型分层因子，用于单独诊断或后续接入策略。
 3. **机器学习打分因子**：若 `enable_ml_score=True`，`factors.factor_ml.build_ml_score_factor` 用已有因子面板滚动训练梯度提升类模型，预测未来收益并追加 `ML_SCORE`；该列只作为候选因子进入后续 IC、分组收益、样本外验证和回测。
@@ -135,7 +201,7 @@ universe_snapshot     股票池快照
 46. **回撤止损与降仓控制**：`live.drawdown_control` 读取纸面账户历史快照和当前持仓估值，按历史峰值计算账户回撤；默认 5% 回撤降到 70% 目标仓位、10% 回撤降到 50%、15% 回撤转现金。日终纸面交易会在订单生成前缩放目标权重，输出 `output/drawdown_control/<strategy>/daily_drawdown_control_<date>.csv` 并写入日报；`scripts/build_drawdown_control.py` 可单独生成检查表。
 47. **容量与冲击成本**：`live.capacity_impact` 读取订单计划和过去 N 日成交额，估算单笔订单参与率、冲击成本 bps、冲击成本金额和当前订单距离容量阈值还有多少空间；默认单笔参与率超过 5% 进入 `WATCH`、超过 10% 进入 `BLOCK`。日终纸面交易会默认读取 `output/cache/prices_long.csv` 作为流动性历史，输出 `output/capacity_impact/<strategy>/daily_capacity_impact_*.csv` 并写入日报；`scripts/build_capacity_impact.py` 可单独生成检查表。
 48. **风险总控日报**：`live.risk_control_report` 汇总运行检查、统一风险门禁、风险黑名单、回撤止损与降仓、容量与冲击成本、订单预检查、组合风险限额和组合压力测试，按 `BLOCK > WATCH > NA > PASS` 给出当天总控状态；日终纸面交易会输出 `output/risk_control_reports/<strategy>/daily_risk_control_report_<date>.csv` 并写入 Markdown 日报。
-49. **数据存储工程化**：`storage.database` 定义本地 SQLite 表结构，默认初始化 `data/quant_strategy.db`，核心表包括 `prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot`。数据库用于长期基础数据，`output/` 继续保存每次实验、日报和图表。
+49. **数据存储工程化**：`storage.database` 定义本地 SQLite 表结构，默认初始化 `data/quant_strategy.db`，核心表包括 `prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot`。`storage.warehouse` 支持行情、财务和因子面板增量写库与导出缓存；`storage.inspection` 支持数据库巡检日报，数据库用于长期基础数据，`output/` 继续保存每次实验、日报和图表。
 
 ### 日终纸面交易
 
@@ -448,5 +514,5 @@ python scripts/build_live_universe.py \
 ### 测试
 
 ```bash
-python3 -m unittest tests.test_optimizer tests.test_backtest_multi tests.test_backtest_single tests.test_plotting tests.test_fusion tests.test_cache_io tests.test_benchmark tests.test_turnover tests.test_data_quality tests.test_risk_exposure tests.test_storage_database tests.test_factors tests.test_factor_events tests.test_announcement_source tests.test_negative_sentiment_filter tests.test_factor_ml tests.test_factor_preprocess tests.test_factor_diagnostics tests.test_factor_validation tests.test_multi_universe_validation tests.test_parameter_sensitivity tests.test_market_regime tests.test_factor_weight_stability tests.test_style_exposure tests.test_style_exposure_monitor tests.test_ic tests.test_factor_weighting tests.test_stock_pool tests.test_order_builder tests.test_order_precheck tests.test_capacity_impact tests.test_risk_blacklist tests.test_event_risk_filter tests.test_paper_trading tests.test_broker tests.test_broker_reconcile tests.test_account_state tests.test_paper_runner tests.test_risk_limits tests.test_stress_test tests.test_risk_control_report tests.test_daily_paper_cli tests.test_paper_report tests.test_manual_confirmation tests.test_execution_feedback tests.test_paper_guard tests.test_paper_run_control tests.test_paper_scheduler -v
+python3 -m unittest tests.test_optimizer tests.test_backtest_multi tests.test_backtest_single tests.test_plotting tests.test_fusion tests.test_cache_io tests.test_benchmark tests.test_turnover tests.test_data_quality tests.test_risk_exposure tests.test_storage_database tests.test_storage_warehouse tests.test_storage_inspection tests.test_factors tests.test_factor_events tests.test_announcement_source tests.test_negative_sentiment_filter tests.test_factor_ml tests.test_factor_preprocess tests.test_factor_diagnostics tests.test_factor_validation tests.test_multi_universe_validation tests.test_parameter_sensitivity tests.test_market_regime tests.test_factor_weight_stability tests.test_style_exposure tests.test_style_exposure_monitor tests.test_ic tests.test_factor_weighting tests.test_stock_pool tests.test_order_builder tests.test_order_precheck tests.test_capacity_impact tests.test_risk_blacklist tests.test_event_risk_filter tests.test_paper_trading tests.test_broker tests.test_broker_reconcile tests.test_account_state tests.test_paper_runner tests.test_risk_limits tests.test_stress_test tests.test_risk_control_report tests.test_daily_paper_cli tests.test_paper_report tests.test_manual_confirmation tests.test_execution_feedback tests.test_paper_guard tests.test_paper_run_control tests.test_paper_scheduler -v
 ```
