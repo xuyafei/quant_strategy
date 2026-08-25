@@ -9,6 +9,7 @@ import pandas as pd
 
 from backtest.backtest_utils import long_to_wide
 from storage.database import connect_database, get_table_columns, initialize_database
+from storage.price_adjustment import add_adjusted_close
 
 
 def _date_text(values: pd.Series) -> pd.Series:
@@ -85,12 +86,16 @@ def upsert_prices_daily(
     missing = required - set(df.columns)
     if missing:
         raise ValueError("prices_daily 缺少列: %s" % ", ".join(sorted(missing)))
-    df["trade_date"] = _date_text(df["trade_date"])
     df["ts_code"] = df["ts_code"].astype(str).str.strip()
     if "volume" not in df.columns:
         df["volume"] = pd.NA
     if "amount" not in df.columns:
         df["amount"] = pd.NA
+    if "adj_factor" in df.columns and (
+        "adj_close" not in df.columns or df["adj_close"].isna().all()
+    ):
+        df = add_adjusted_close(df, mode="qfq")
+    df["trade_date"] = _date_text(df["trade_date"])
     df["source"] = source
     df = df.dropna(subset=["trade_date"])
     df = df[df["ts_code"] != ""]
@@ -124,7 +129,10 @@ def load_prices_daily(
     if clean_symbols:
         where.append("ts_code IN (%s)" % ", ".join(["?"] * len(clean_symbols)))
         params.extend(clean_symbols)
-    sql = "SELECT trade_date, ts_code, open, high, low, close, volume, amount FROM prices_daily"
+    sql = (
+        "SELECT trade_date, ts_code, open, high, low, close, "
+        "adj_factor, adj_close, volume, amount FROM prices_daily"
+    )
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY ts_code, trade_date"
@@ -144,7 +152,7 @@ def export_price_cache(
     symbols: Iterable[str] | None = None,
     price_col: str = "close",
 ) -> dict[str, Path]:
-    """从 SQLite 导出当前主流程兼容的 `prices_long.csv` 与 `prices_wide_close.csv`。"""
+    """从 SQLite 导出行情缓存；默认保留真实交易用 `prices_wide_close.csv`。"""
     out_dir = Path(output_dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
     prices_long = load_prices_daily(database, start=start, end=end, symbols=symbols)
@@ -159,6 +167,11 @@ def export_price_cache(
     wide_path = out_dir / "prices_wide_close.csv"
     wide.to_csv(wide_path, date_format="%Y-%m-%d")
     paths["prices_wide_close"] = wide_path
+    if "adj_close" in prices_long.columns and prices_long["adj_close"].notna().any():
+        wide_adj = long_to_wide(prices_long, "adj_close")
+        wide_adj_path = out_dir / "prices_wide_adj_close.csv"
+        wide_adj.to_csv(wide_adj_path, date_format="%Y-%m-%d")
+        paths["prices_wide_adj_close"] = wide_adj_path
     return paths
 
 

@@ -55,6 +55,38 @@ SUMMARY_COLUMNS = [
     "max_abs_price_slippage_pct",
 ]
 
+NEXT_DAY_REVIEW_COLUMNS = [
+    "date",
+    "review_date",
+    "strategy",
+    "symbol",
+    "side",
+    "execution_status",
+    "executed_qty",
+    "executed_price",
+    "review_price",
+    "executed_amount",
+    "review_value",
+    "next_day_return",
+    "next_day_effect",
+    "effect_type",
+    "review_status",
+]
+
+NEXT_DAY_SUMMARY_COLUMNS = [
+    "date",
+    "review_date",
+    "strategy",
+    "n_orders",
+    "n_reviewed",
+    "n_missing_review_price",
+    "buy_next_day_pnl",
+    "sell_avoidance_pnl",
+    "total_next_day_effect",
+    "avg_buy_next_day_return",
+    "avg_sell_avoidance_return",
+]
+
 
 def execution_feedback_dir(settings: Settings, strategy: str) -> Path:
     safe = str(strategy).replace("/", "_")
@@ -235,10 +267,200 @@ def build_execution_feedback_report(detail: pd.DataFrame, summary: pd.DataFrame)
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _price_lookup(prices: pd.DataFrame) -> pd.DataFrame:
+    if prices is None or prices.empty:
+        return pd.DataFrame(columns=["date", "symbol", "price"])
+    frame = prices.copy()
+    if {"trade_date", "ts_code", "close"}.issubset(frame.columns):
+        out = frame.rename(columns={"trade_date": "date", "ts_code": "symbol", "close": "price"})
+        out = out[["date", "symbol", "price"]].copy()
+    elif {"date", "symbol", "price"}.issubset(frame.columns):
+        out = frame[["date", "symbol", "price"]].copy()
+    elif {"date", "symbol", "close"}.issubset(frame.columns):
+        out = frame.rename(columns={"close": "price"})[["date", "symbol", "price"]].copy()
+    else:
+        date_col = "date" if "date" in frame.columns else frame.columns[0]
+        wide = frame.rename(columns={date_col: "date"}).copy()
+        out = wide.melt(id_vars=["date"], var_name="symbol", value_name="price")
+    out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    out["symbol"] = out["symbol"].astype(str)
+    out["price"] = pd.to_numeric(out["price"], errors="coerce")
+    out = out.dropna(subset=["date", "symbol", "price"])
+    out = out[out["price"] > 0.0].sort_values(["date", "symbol"]).reset_index(drop=True)
+    return out
+
+
+def _resolve_review_date(price_frame: pd.DataFrame, trade_date: pd.Timestamp, review_date: Any | None) -> pd.Timestamp | None:
+    if price_frame.empty:
+        return None
+    dates = pd.Index(sorted(price_frame["date"].dropna().unique()))
+    if review_date is not None:
+        target = pd.Timestamp(review_date)
+        candidates = dates[dates >= target]
+    else:
+        candidates = dates[dates > trade_date]
+    if len(candidates) == 0:
+        return None
+    return pd.Timestamp(candidates[0])
+
+
+def build_next_day_execution_review(
+    execution_detail: pd.DataFrame,
+    prices: pd.DataFrame,
+    *,
+    review_date: Any | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    用成交回填和次日价格做执行后复盘。
+
+    BUY 的 `next_day_effect` 表示买入后次日浮盈浮亏；
+    SELL 的 `next_day_effect` 表示卖出后次日规避损益，价格下跌为正。
+    """
+    if execution_detail.empty:
+        return (
+            pd.DataFrame(columns=NEXT_DAY_REVIEW_COLUMNS),
+            pd.DataFrame(columns=NEXT_DAY_SUMMARY_COLUMNS),
+        )
+    required = {"date", "strategy", "symbol", "side", "executed_qty", "executed_price", "execution_status"}
+    missing = required - set(execution_detail.columns)
+    if missing:
+        raise ValueError("执行偏差明细缺少必要列: %s" % ", ".join(sorted(missing)))
+
+    detail = execution_detail.copy()
+    detail["date"] = pd.to_datetime(detail["date"], errors="coerce")
+    trade_date = pd.Timestamp(detail["date"].dropna().min())
+    price_frame = _price_lookup(prices)
+    resolved_review_date = _resolve_review_date(price_frame, trade_date, review_date)
+    if resolved_review_date is None:
+        resolved_review_date = pd.NaT
+        review_prices = pd.Series(dtype=float)
+    else:
+        review_prices = (
+            price_frame[price_frame["date"] == resolved_review_date]
+            .drop_duplicates(subset=["symbol"], keep="last")
+            .set_index("symbol")["price"]
+        )
+
+    rows: list[dict[str, Any]] = []
+    for rec in detail.to_dict("records"):
+        side = str(rec.get("side", "")).upper()
+        symbol = str(rec.get("symbol", ""))
+        status = str(rec.get("execution_status", "")).upper()
+        qty = abs(int(round(_num(rec.get("executed_qty", 0.0)))))
+        executed_price = _num(rec.get("executed_price", 0.0))
+        executed_amount = qty * executed_price if qty > 0 and executed_price > 0 else 0.0
+        review_price = _num(review_prices.get(symbol, 0.0), default=0.0)
+        review_value = qty * review_price if qty > 0 and review_price > 0 else 0.0
+        if status in {"FILLED", "PARTIAL", "OVERFILLED"} and qty > 0 and executed_price > 0 and review_price > 0:
+            next_ret = review_price / executed_price - 1.0
+            if side == "BUY":
+                effect = (review_price - executed_price) * qty
+                effect_type = "buy_mark_to_market_pnl"
+            elif side == "SELL":
+                effect = (executed_price - review_price) * qty
+                effect_type = "sell_avoidance_pnl"
+            else:
+                effect = 0.0
+                effect_type = "unknown"
+            review_status = "REVIEWED"
+        elif status not in {"FILLED", "PARTIAL", "OVERFILLED"}:
+            next_ret = 0.0
+            effect = 0.0
+            effect_type = "not_executed"
+            review_status = "NOT_EXECUTED"
+        else:
+            next_ret = 0.0
+            effect = 0.0
+            effect_type = "missing_review_price"
+            review_status = "MISSING_REVIEW_PRICE"
+        rows.append(
+            {
+                "date": _date_to_str(rec.get("date", "")),
+                "review_date": "" if pd.isna(resolved_review_date) else resolved_review_date.strftime("%Y-%m-%d"),
+                "strategy": str(rec.get("strategy", "")),
+                "symbol": symbol,
+                "side": side,
+                "execution_status": status,
+                "executed_qty": qty,
+                "executed_price": executed_price,
+                "review_price": review_price,
+                "executed_amount": executed_amount,
+                "review_value": review_value,
+                "next_day_return": next_ret,
+                "next_day_effect": effect,
+                "effect_type": effect_type,
+                "review_status": review_status,
+            }
+        )
+
+    review = pd.DataFrame(rows, columns=NEXT_DAY_REVIEW_COLUMNS)
+    buy_reviewed = review[(review["side"] == "BUY") & (review["review_status"] == "REVIEWED")]
+    sell_reviewed = review[(review["side"] == "SELL") & (review["review_status"] == "REVIEWED")]
+    summary = pd.DataFrame(
+        [
+            {
+                "date": str(review["date"].iloc[0]) if not review.empty else "",
+                "review_date": str(review["review_date"].iloc[0]) if not review.empty else "",
+                "strategy": str(review["strategy"].iloc[0]) if not review.empty else "",
+                "n_orders": int(len(review)),
+                "n_reviewed": int((review["review_status"] == "REVIEWED").sum()) if not review.empty else 0,
+                "n_missing_review_price": int((review["review_status"] == "MISSING_REVIEW_PRICE").sum()) if not review.empty else 0,
+                "buy_next_day_pnl": float(buy_reviewed["next_day_effect"].sum()) if not buy_reviewed.empty else 0.0,
+                "sell_avoidance_pnl": float(sell_reviewed["next_day_effect"].sum()) if not sell_reviewed.empty else 0.0,
+                "total_next_day_effect": float(review["next_day_effect"].sum()) if not review.empty else 0.0,
+                "avg_buy_next_day_return": float(buy_reviewed["next_day_return"].mean()) if not buy_reviewed.empty else 0.0,
+                "avg_sell_avoidance_return": float((-sell_reviewed["next_day_return"]).mean()) if not sell_reviewed.empty else 0.0,
+            }
+        ],
+        columns=NEXT_DAY_SUMMARY_COLUMNS,
+    )
+    return review, summary
+
+
+def build_next_day_review_report(review: pd.DataFrame, summary: pd.DataFrame) -> str:
+    """生成次日复盘 Markdown 报告。"""
+    rec = summary.iloc[0].to_dict() if not summary.empty else {}
+    strategy = str(rec.get("strategy", ""))
+    date_s = str(rec.get("date", ""))
+    review_date = str(rec.get("review_date", ""))
+    lines = [
+        "# 真实成交次日复盘 - %s - %s" % (strategy, date_s),
+        "",
+        "## 摘要",
+        "",
+        "- 交易日：%s" % date_s,
+        "- 复盘价格日：%s" % review_date,
+        "- 订单数：%s" % rec.get("n_orders", 0),
+        "- 已复盘订单：%s" % rec.get("n_reviewed", 0),
+        "- 缺少复盘价格：%s" % rec.get("n_missing_review_price", 0),
+        "- 买入次日浮盈浮亏：%.2f" % float(rec.get("buy_next_day_pnl", 0.0) or 0.0),
+        "- 卖出次日规避损益：%.2f" % float(rec.get("sell_avoidance_pnl", 0.0) or 0.0),
+        "- 次日总影响：%.2f" % float(rec.get("total_next_day_effect", 0.0) or 0.0),
+        "- 买入平均次日收益：%.4f%%" % (float(rec.get("avg_buy_next_day_return", 0.0) or 0.0) * 100.0),
+        "- 卖出平均规避收益：%.4f%%" % (float(rec.get("avg_sell_avoidance_return", 0.0) or 0.0) * 100.0),
+        "",
+        "## 逐笔次日复盘",
+        "",
+        _markdown_table(review),
+        "",
+        "## 说明",
+        "",
+        "买入订单的 `next_day_effect` 是次日浮盈浮亏：`(review_price - executed_price) * executed_qty`。",
+        "",
+        "卖出订单的 `next_day_effect` 是次日规避损益：`(executed_price - review_price) * executed_qty`，卖出后股价下跌为正。",
+        "",
+        "这张表不判断策略长期好坏，只检查真实成交之后，次日价格变化对执行结果的短期影响。",
+    ]
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def save_execution_feedback(
     settings: Settings,
     detail: pd.DataFrame,
     summary: pd.DataFrame,
+    *,
+    next_day_review: pd.DataFrame | None = None,
+    next_day_summary: pd.DataFrame | None = None,
 ) -> dict[str, Path]:
     """保存执行偏差 CSV 与 Markdown 报告。"""
     if summary.empty:
@@ -256,8 +478,23 @@ def save_execution_feedback(
     detail.to_csv(detail_path, index=False)
     summary.to_csv(summary_path, index=False)
     report_path.write_text(build_execution_feedback_report(detail, summary), encoding="utf-8")
-    return {
+    paths = {
         "detail": detail_path,
         "summary": summary_path,
         "report": report_path,
     }
+    if next_day_review is not None and next_day_summary is not None:
+        review_path = base / ("%s_next_day_review.csv" % date_s)
+        review_summary_path = base / ("%s_next_day_review_summary.csv" % date_s)
+        review_report_path = base / ("%s_next_day_review.md" % date_s)
+        next_day_review.to_csv(review_path, index=False)
+        next_day_summary.to_csv(review_summary_path, index=False)
+        review_report_path.write_text(build_next_day_review_report(next_day_review, next_day_summary), encoding="utf-8")
+        paths.update(
+            {
+                "next_day_review": review_path,
+                "next_day_summary": review_summary_path,
+                "next_day_report": review_report_path,
+            }
+        )
+    return paths

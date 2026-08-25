@@ -44,9 +44,9 @@ factors/        # 因子与 panel_builder；factor_events 支持公告总分和�
 backtest/       # backtest_single、backtest_multi、utils
 models/         # fusion、factor_weighting、optimizer
 analysis/       # performance、benchmark、turnover、risk_exposure、data_quality、factor_diagnostics、factor_validation、market_regime、plotting、ic
-live/           # data_feed、stock_pool、cache_io、order_builder、drawdown_control、capacity_impact、order_precheck、risk_blacklist、risk_gate、risk_limits、stress_test、risk_control_report、announcement_source、news_source、event_risk_filter、negative_sentiment_filter、paper_trading、broker、account_state、paper_runner、paper_report、factor_health_report、manual_confirmation、execution_feedback、paper_guard、paper_run_control、daily_paper_cli；signal 非 MVP 占位
+live/           # data_feed、stock_pool、cache_io、version_freeze、run_monitor、performance_attribution、deviation_analysis、order_builder、drawdown_control、capacity_impact、order_precheck、risk_blacklist、risk_gate、risk_limits、stress_test、risk_control_report、announcement_source、news_source、event_risk_filter、negative_sentiment_filter、paper_trading、broker、account_state、paper_runner、paper_report、factor_health_report、manual_confirmation、execution_feedback、paper_guard、paper_run_control、daily_paper_cli；signal 非 MVP 占位
 storage/        # SQLite 表结构与后续数据库读写层
-scripts/        # init_database.py、update_database_cache.py、build_database_quality_report.py、build_live_universe.py、fetch_tushare_announcements.py、fetch_akshare_stock_news.py、build_event_risk_filter.py、build_announcement_event_type_analysis.py、build_announcement_event_type_backtest.py、build_announcement_event_type_risk_filter_backtest.py、build_negative_sentiment_filter.py、build_drawdown_control.py、build_capacity_impact.py、build_portfolio_risk_limits.py、build_portfolio_stress_tests.py、run_daily_paper.py、build_execution_feedback.py、run_scheduled_daily_paper.py 等日常运行入口
+scripts/        # init_database.py、update_database_cache.py、build_database_quality_report.py、build_live_universe.py、fetch_tushare_announcements.py、fetch_akshare_stock_news.py、build_event_risk_filter.py、build_announcement_event_type_analysis.py、build_announcement_event_type_backtest.py、build_announcement_event_type_risk_filter_backtest.py、build_negative_sentiment_filter.py、build_drawdown_control.py、build_capacity_impact.py、build_portfolio_risk_limits.py、build_portfolio_stress_tests.py、run_daily_paper.py、build_execution_feedback.py、build_live_performance_attribution.py、build_live_deviation_analysis.py、run_scheduled_daily_paper.py 等日常运行入口
 config.py
 main.py
 ```
@@ -148,15 +148,35 @@ database_quality_report.md
 
 巡检日报只做检查，不改变回测、调仓或订单。它回答的是：数据库里的数据是否完整、新鲜、可用，导出的缓存是否足够支撑当天运行。
 
+### 实盘前版本冻结
+
+小资金人工确认实盘前，先生成版本冻结清单，记录策略、股票池、调仓频率、运行时间、价格口径、关键风控参数、Git commit 和关键源码哈希：
+
+```bash
+python scripts/build_live_version_freeze.py \
+  --as-of-date 2026-08-19 \
+  --strategy FUSED_ROLLING_SCORE_WEIGHTED \
+  --run-time 09:35 \
+  --stock-pool data/stock_pool_ftse_china_a50_20260710.csv
+```
+
+默认输出：
+
+```text
+output/live_freeze/<date>/freeze_manifest.json
+output/live_freeze/<date>/freeze_manifest.csv
+output/live_freeze/<date>/freeze_report.md
+```
+
 ### 当前 `main.py` 实际顺序（与代码一致）
 
-0. **数据存储工程化**：`storage.database` 定义本地 SQLite 表结构，`scripts/init_database.py` 可初始化 `prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot`。`storage.warehouse` 提供行情、财务和因子面板 upsert、读取和缓存导出；`scripts/update_database_cache.py` 可把本地 CSV 缓存增量写入 SQLite，再导出 `output/cache/prices_long.csv`、`prices_wide_close.csv` 和 `factor_panel.csv`；`storage.inspection` 与 `scripts/build_database_quality_report.py` 生成数据库巡检日报，检查表结构、行情新鲜度、财务覆盖、因子覆盖和缓存文件状态。
-1. **数据**：`data/prices_demo.csv` 优先；否则读取 Tushare 行情缓存；若缓存不存在，则从 `Settings.stock_pool_path` 指定的 Excel/CSV 股票池读取标的并拉取 Tushare 日线，同时写入 `Settings.tushare_price_cache_path`；若股票池不存在才使用 `main._DEFAULT_TS_SYMBOLS` 示例股票池；失败则合成宽表。得到 `prices`（宽表）与 `long_df`。
+0. **数据存储工程化**：`storage.database` 定义本地 SQLite 表结构，`scripts/init_database.py` 可初始化 `prices_daily`、`fina_indicator`、`factor_panel_daily`、`announcement_events`、`news_sentiment`、`universe_snapshot`。`storage.warehouse` 提供行情、财务和因子面板 upsert、读取和缓存导出；行情表支持 `adj_factor/adj_close`，交易口径继续导出 `prices_wide_close.csv`，研究口径可额外导出 `prices_wide_adj_close.csv`；`scripts/update_database_cache.py` 可把本地 CSV 缓存增量写入 SQLite，再导出 `output/cache/prices_long.csv`、`prices_wide_close.csv` 和 `factor_panel.csv`；`storage.inspection` 与 `scripts/build_database_quality_report.py` 生成数据库巡检日报，检查表结构、行情新鲜度、财务覆盖、因子覆盖和缓存文件状态。
+1. **数据**：`data/prices_demo.csv` 优先；否则读取 Tushare 行情缓存；若缓存不存在，则从 `Settings.stock_pool_path` 指定的 Excel/CSV 股票池读取标的并拉取 Tushare 日线和 `adj_factor`，同时写入 `Settings.tushare_price_cache_path`；若股票池不存在才使用 `main._DEFAULT_TS_SYMBOLS` 示例股票池；失败则合成宽表。得到 `long_df`、研究口径 `research_prices`（优先 `adj_close`）与交易口径 `execution_prices`（`close`）。
 2. **基础因子面板**：`factors.panel_builder.build_four_factor_panel`（历史命名保留；当前默认十五列：`MOMENTUM`、`MOMENTUM_60D`、`REVERSAL_5D`、`VOLATILITY`、`VOLUME_RATIO_20D`、`PE`、`ROE`、`GROSS_MARGIN`、`NET_MARGIN`、`LOW_DEBT_TO_ASSETS`、`REVENUE_GROWTH`、`PROFIT_GROWTH`、`FREE_CASH_FLOW_YIELD`、`CASH_PROFIT_QUALITY`、`ANNOUNCEMENT_EVENT_SCORE`）。公告事件因子默认读取 `data/announcement_events.csv`，文件不存在时该列为空；`factors.factor_events.calc_announcement_event_type_scores` 可把同一公告表拆成回购、减持、问询处罚、分红、合同项目等类型分层因子，用于单独诊断或后续接入策略。
 3. **机器学习打分因子**：若 `enable_ml_score=True`，`factors.factor_ml.build_ml_score_factor` 用已有因子面板滚动训练梯度提升类模型，预测未来收益并追加 `ML_SCORE`；该列只作为候选因子进入后续 IC、分组收益、样本外验证和回测。
 4. **因子清洗与行业内标准化**：`factors.preprocess.preprocess_factor_panel` 默认读取 `industry_col` 行业字段，在同一交易日同一行业内做 winsorize + z-score；缺行业或行业样本少于 `factor_industry_min_count` 时回退全股票池横截面 z-score。原始 `factor_panel.csv` 保留审计，IC/诊断/回测使用标准化后的研究面板。
 5. **数据质量**：`analysis.data_quality` 输出价格覆盖、因子覆盖、调仓日覆盖报告；若 `persist_run_outputs`，保存到 `output/data_quality/`。
-6. **落盘**：若 `persist_run_outputs`，`live.cache_io.save_run_cache` → `output/cache/`（`prices_long.csv`、`prices_wide_close.csv`、`factor_panel.csv`、`factor_panel_zscore.csv`、`run_meta.txt`）；若生成 `ML_SCORE`，另写 `output/factor_diagnostics/ml_score_training_log.csv`。
+6. **落盘**：若 `persist_run_outputs`，`live.cache_io.save_run_cache` → `output/cache/`（`prices_long.csv`、交易口径 `prices_wide_close.csv`、可选研究口径 `prices_wide_adj_close.csv`、`factor_panel.csv`、`factor_panel_zscore.csv`、`run_meta.txt`）；若生成 `ML_SCORE`，另写 `output/factor_diagnostics/ml_score_training_log.csv`。
 7. **IC 与稳定性诊断**：`analysis.ic` 对各因子列及 **与融合同构的** FUSED 得分算日截面 Spearman；同时输出 IC 分布分位数、正负占比和滚动稳定性；若 `persist_run_outputs`，另存 `ic_*.csv` 与 `output/ic_diagnostics/*.csv`。
 8. **因子诊断**：`analysis.factor_diagnostics.batch_factor_long_excess` 对每个因子构造 Top-K 等权多头腿，并相对股票池等权基准输出 `excess_ann_return`、`tracking_error`、`information_ratio`；`batch_factor_group_returns` 按 `Settings.factor_group_count` 分组计算持有期收益、Top-Bottom、胜率与 `monotonicity_score`。
 9. **多因子权重建议**：`models.factor_weighting.build_factor_weight_summary` 综合 IC 分布、rolling IC、Top-Bottom 与单调性，输出 `factor_score` 与 `fusion_weight`。全样本表用于诊断审计；训练段表用于 `FUSED_SCORE_WEIGHTED`；滚动权重日志用于 `FUSED_ROLLING_SCORE_WEIGHTED`；`analysis.factor_weight_stability` 进一步监控滚动权重的稳定性、漂移事件和组合层主导因子。
@@ -183,7 +203,10 @@ database_quality_report.md
 28. **日终纸面交易脚本**：`scripts/run_daily_paper.py` 从 `output/rebalance_logs/<strategy>.csv` 读取最近一期目标权重，从 `output/cache/prices_wide_close.csv` 读取最新价格，调用每日纸面交易运行器并打印摘要。
 29. **纸面交易日报与增强因子健康总览**：`live.paper_report` 将单日纸面运行结果整理为 Markdown，默认写入 `output/paper_reports/<strategy>/<date>.md`，便于复盘每天买卖、阻断、成交、持仓、账户变化、因子失效监控、目标组合风格暴露、统一风险门禁、风险黑名单和增强因子健康总览；`live.factor_health_report` 会读取 `factor_decay_monitor.csv`、`rolling_out_of_sample_summary.csv`、`factor_selection_summary.csv`、`factor_redundancy_report.csv`、`factor_weight_stability_summary.csv`、`factor_weight_drift_events.csv`、`strategy_regime_summary.csv`，压缩成日终可读的健康摘要。
 30. **小资金人工确认实盘单**：`live.manual_confirmation` 基于同一份订单计划和预检查结果生成 `output/live_orders/<strategy>/<date>_manual_confirm.csv/.md`，预留人工执行回填字段；该层只给建议，不自动下单。
-31. **真实成交回填与执行偏差分析**：`live.execution_feedback` 读取人工确认单中回填的 `executed_qty/executed_price`，比较建议订单和真实执行，输出 `output/execution_feedback/<strategy>/` 下的逐笔偏差、汇总和 Markdown 报告。
+31. **真实成交回填与执行偏差分析**：`live.execution_feedback` 读取人工确认单中回填的 `executed_qty/executed_price`，比较建议订单和真实执行，输出 `output/execution_feedback/<strategy>/` 下的逐笔偏差、汇总和 Markdown 报告；若提供价格缓存，`build_next_day_execution_review` 会进一步生成次日复盘，观察买入后的次日浮盈浮亏、卖出后的规避损益和缺少复盘价格的标的。
+31A. **实盘运行监控日报**：`live.run_monitor` 检查冻结清单、目标权重、价格缓存、人工确认单、账户快照、风险总控日报、纸面交易日报、真实成交回填和次日复盘是否存在且日期合理；`scripts/build_live_run_monitor.py` 输出 `output/live_run_monitor/<strategy>/<date>_run_monitor.csv/.md`，用于每天先判断流程是否完整跑完。
+31B. **实盘表现归因**：`live.performance_attribution` 读取纸面账户快照、当前持仓、价格缓存和真实成交回填结果，拆解账户收益、股票池等权基准收益、主动收益、当前持仓价格贡献、执行滑点贡献和未解释残差；`scripts/build_live_performance_attribution.py` 输出 `output/performance_attribution/<strategy>/` 下的汇总 CSV、逐股票贡献 CSV 和 Markdown 归因报告。
+31C. **实盘偏差分析**：`live.deviation_analysis` 比较目标权重、纸面持仓、可选券商持仓和真实成交回填，输出目标跟踪偏差、纸面 / 券商持仓同步偏差、成交未完成比例和滑点提示；`scripts/build_live_deviation_analysis.py` 输出 `output/live_deviation/<strategy>/` 下的偏差汇总、逐股票偏差和 Markdown 报告。
 32. **运行失败 / 异常检查**：`live.paper_guard` 在日终纸面交易前后检查目标权重、价格日期、价格有效性、账户现金、持仓、订单检查和成交日志；ERROR 级问题直接阻断运行，WARNING 级问题进入命令摘要与日报。
 33. **交易日日历 / 重复运行保护**：`live.paper_run_control` 从价格缓存提取交易日日历，默认阻断非交易日运行；若同一策略同一日期已有纸面账户快照，默认阻断重复写入，避免无意覆盖账户状态。
 34. **每日调度入口**：`scripts/run_scheduled_daily_paper.py` 包装日终纸面交易命令，适合交给 cron / launchd / 服务器调度器调用，并把 stdout、stderr、参数和退出码写入 `output/scheduler_logs/<date>.log`。
@@ -228,6 +251,7 @@ python scripts/run_daily_paper.py --stress-scenarios config/stress_scenarios.csv
 python scripts/run_daily_paper.py --drawdown-rules config/drawdown_rules.csv
 python scripts/run_daily_paper.py --capacity-rules config/capacity_rules.csv
 python scripts/run_daily_paper.py --liquidity-history output/cache/prices_long.csv
+python scripts/run_daily_paper.py --freeze-manifest output/live_freeze/2026-08-19/freeze_manifest.json
 python scripts/run_daily_paper.py --no-guard
 python scripts/run_daily_paper.py --max-price-age-days 3
 python scripts/run_daily_paper.py --allow-non-trading-day

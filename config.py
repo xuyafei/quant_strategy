@@ -28,6 +28,9 @@ class Settings:
     fina_indicator_cache_path: Path | None = None
     announcement_event_path: Path | None = None
     price_col: str = "close"
+    research_price_col: str = "adj_close"
+    execution_price_col: str = "close"
+    adjustment_mode: str = "qfq"
     commission_rate: float = 0.0003
     rebalance_freq: str = "ME"
     force_final_rebalance: bool = False

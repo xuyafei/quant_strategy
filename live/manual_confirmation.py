@@ -31,6 +31,12 @@ CONFIRM_COLUMNS = [
     "check_reason",
     "factor_health_status",
     "factor_health_reasons",
+    "freeze_as_of_date",
+    "freeze_strategy",
+    "freeze_stock_pool_sha256",
+    "freeze_git_commit",
+    "freeze_git_dirty",
+    "freeze_manifest_path",
     "manual_action",
     "operator",
     "confirmed_at",
@@ -102,6 +108,29 @@ def _factor_health_summary(factor_monitor: pd.DataFrame | None) -> tuple[str, st
     return summarize_factor_health(factor_monitor)
 
 
+def _freeze_summary(freeze_manifest: dict[str, Any] | None) -> dict[str, str]:
+    if not freeze_manifest:
+        return {
+            "freeze_as_of_date": "",
+            "freeze_strategy": "",
+            "freeze_stock_pool_sha256": "",
+            "freeze_git_commit": "",
+            "freeze_git_dirty": "",
+            "freeze_manifest_path": "",
+        }
+    policy = freeze_manifest.get("live_policy", {}) or {}
+    stock_pool = freeze_manifest.get("stock_pool", {}) or {}
+    git = freeze_manifest.get("git", {}) or {}
+    return {
+        "freeze_as_of_date": str(freeze_manifest.get("as_of_date", "") or ""),
+        "freeze_strategy": str(policy.get("strategy", "") or ""),
+        "freeze_stock_pool_sha256": str(stock_pool.get("sha256", "") or ""),
+        "freeze_git_commit": str(git.get("commit", "") or ""),
+        "freeze_git_dirty": str(bool(git.get("is_dirty", False))),
+        "freeze_manifest_path": str(freeze_manifest.get("manifest_path", "") or ""),
+    }
+
+
 def _manual_action(check_status: str, factor_health_status: str) -> str:
     if str(check_status).upper() == "BLOCK":
         return "DO_NOT_EXECUTE"
@@ -123,6 +152,7 @@ def build_manual_confirmation_sheet(
     strategy = str(result.get("strategy", ""))
     trade_date = _date_to_str(result.get("trade_date"))
     factor_status, factor_reasons = _factor_health_summary(factor_monitor)
+    freeze = _freeze_summary(result.get("freeze_manifest"))
 
     if orders is None or orders.empty:
         return pd.DataFrame(columns=CONFIRM_COLUMNS)
@@ -156,6 +186,8 @@ def build_manual_confirmation_sheet(
     sheet.insert(1, "strategy", strategy)
     sheet["factor_health_status"] = factor_status
     sheet["factor_health_reasons"] = factor_reasons
+    for col, value in freeze.items():
+        sheet[col] = value
     sheet["check_status"] = sheet["check_status"].fillna("UNKNOWN").astype(str)
     sheet["check_reason"] = sheet["check_reason"].fillna("missing_order_precheck").astype(str)
     sheet["manual_action"] = [
@@ -207,6 +239,7 @@ def build_manual_confirmation_report(
     target_date = _date_to_str(result.get("target_date", result.get("trade_date")))
     price_date = _date_to_str(result.get("price_date", result.get("trade_date")))
     factor_status, factor_reasons = _factor_health_summary(factor_monitor)
+    freeze = _freeze_summary(result.get("freeze_manifest"))
     pass_orders = sheet[sheet["check_status"].astype(str).str.upper() == "PASS"] if not sheet.empty else sheet
     blocked = sheet[sheet["check_status"].astype(str).str.upper() == "BLOCK"] if not sheet.empty else sheet
     buys = pass_orders[pass_orders["side"].astype(str).str.upper() == "BUY"] if not pass_orders.empty else pass_orders
@@ -234,6 +267,15 @@ def build_manual_confirmation_report(
         "- 通过卖出金额：%s" % _fmt_money(sells["estimated_amount"].astype(float).sum() if not sells.empty else 0.0),
         "- 因子健康状态：`%s`" % factor_status,
         "- 因子健康原因：%s" % factor_reasons,
+        "",
+        "## 版本冻结",
+        "",
+        "- 冻结日期：%s" % (freeze["freeze_as_of_date"] or "未提供"),
+        "- 冻结策略：`%s`" % (freeze["freeze_strategy"] or "未提供"),
+        "- 股票池 SHA256：`%s`" % (freeze["freeze_stock_pool_sha256"] or "未提供"),
+        "- Git Commit：`%s`" % (freeze["freeze_git_commit"] or "未提供"),
+        "- Git 工作区未提交改动：%s" % (freeze["freeze_git_dirty"] or "未提供"),
+        "- 冻结清单：%s" % (freeze["freeze_manifest_path"] or "未提供"),
         "",
         "## 可人工确认订单",
         "",

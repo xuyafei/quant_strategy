@@ -110,6 +110,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         print("export prices_long=%s" % price_paths["prices_long"])
         print("export prices_wide_close=%s" % price_paths["prices_wide_close"])
+        if "prices_wide_adj_close" in price_paths:
+            print("export prices_wide_adj_close=%s" % price_paths["prices_wide_adj_close"])
         print("export factor_panel=%s" % factor_path)
     return 0
 

@@ -584,9 +584,32 @@ def _industry_series_from_long_df(
     return industry_long.reindex(panel_index)
 
 
-def _load_market_data(settings: Settings) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _research_price_column(long_df: pd.DataFrame, settings: Settings) -> str:
+    """选择研究回测价格列；优先复权价，缺失时回退原始价格。"""
+    research_col = str(getattr(settings, "research_price_col", "") or "").strip()
+    fallback_col = str(getattr(settings, "price_col", "close") or "close").strip()
+    if research_col and research_col in long_df.columns and long_df[research_col].notna().any():
+        return research_col
+    return fallback_col
+
+
+def _price_wides_for_research_and_execution(
+    long_df: pd.DataFrame,
+    settings: Settings,
+) -> tuple[pd.DataFrame, pd.DataFrame, str, str]:
+    """返回研究价格宽表、交易价格宽表和各自列名。"""
+    research_col = _research_price_column(long_df, settings)
+    execution_col = str(getattr(settings, "execution_price_col", "") or settings.price_col)
+    if execution_col not in long_df.columns:
+        execution_col = settings.price_col
+    research_prices = long_to_wide(long_df, research_col)
+    execution_prices = long_to_wide(long_df, execution_col)
+    return research_prices, execution_prices, research_col, execution_col
+
+
+def _load_market_data(settings: Settings) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    读取本地/远程行情数据，返回 `(long_df, prices_wide)`。
+    读取本地/远程行情数据，返回 `(long_df, research_prices, execution_prices)`。
 
     优先级：
     1. `data/prices_demo.csv`
@@ -600,16 +623,27 @@ def _load_market_data(settings: Settings) -> tuple[pd.DataFrame, pd.DataFrame]:
         print("加载本地数据:", demo_path)
         long_df = load_prices_from_csv(demo_path)
         long_df = _attach_industry_to_long_df(long_df, settings)
-        return long_df, long_to_wide(long_df, settings.price_col)
+        research_prices, execution_prices, research_col, execution_col = _price_wides_for_research_and_execution(
+            long_df,
+            settings,
+        )
+        print("价格口径: research=%s, execution=%s" % (research_col, execution_col))
+        return long_df, research_prices, execution_prices
 
     cache_path = settings.tushare_price_cache_path
     if cache_path is not None and Path(cache_path).is_file():
         print("加载 Tushare 本地行情缓存:", cache_path)
         long_df = load_prices_from_csv(cache_path)
         long_df = _attach_industry_to_long_df(long_df, settings)
-        prices = long_to_wide(long_df, settings.price_col)
-        print("本地缓存已对齐: %d 只股票, %d 个交易日" % (prices.shape[1], prices.shape[0]))
-        return long_df, prices
+        research_prices, execution_prices, research_col, execution_col = _price_wides_for_research_and_execution(
+            long_df,
+            settings,
+        )
+        print(
+            "本地缓存已对齐: %d 只股票, %d 个交易日；价格口径 research=%s, execution=%s"
+            % (research_prices.shape[1], research_prices.shape[0], research_col, execution_col)
+        )
+        return long_df, research_prices, execution_prices
 
     symbols = list(_DEFAULT_TS_SYMBOLS)
     pool_path = settings.stock_pool_path
@@ -624,21 +658,33 @@ def _load_market_data(settings: Settings) -> tuple[pd.DataFrame, pd.DataFrame]:
             "尝试从 Tushare 拉取（区间 %s ~ %s，股票数=%d）"
             % (settings.backtest_start, settings.backtest_end, len(symbols))
         )
-        long_df = fetch_daily_panel(symbols, settings.backtest_start, settings.backtest_end)
+        long_df = fetch_daily_panel(
+            symbols,
+            settings.backtest_start,
+            settings.backtest_end,
+            include_adj_factor=True,
+            adjustment_mode=getattr(settings, "adjustment_mode", "qfq"),
+        )
         long_df = _attach_industry_to_long_df(long_df, settings)
         if cache_path is not None:
             Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
             long_df.to_csv(cache_path, index=False, date_format="%Y-%m-%d")
             print("Tushare 行情已缓存:", cache_path)
-        prices = long_to_wide(long_df, settings.price_col)
-        print("Tushare 已对齐: %d 只股票, %d 个交易日" % (prices.shape[1], prices.shape[0]))
-        return long_df, prices
+        research_prices, execution_prices, research_col, execution_col = _price_wides_for_research_and_execution(
+            long_df,
+            settings,
+        )
+        print(
+            "Tushare 已对齐: %d 只股票, %d 个交易日；价格口径 research=%s, execution=%s"
+            % (research_prices.shape[1], research_prices.shape[0], research_col, execution_col)
+        )
+        return long_df, research_prices, execution_prices
     except Exception as e:
         print("Tushare 不可用，回退合成数据:", e)
         prices = _demo_price_wide()
         long_df = wide_to_long(prices, settings.price_col)
         long_df = _attach_industry_to_long_df(long_df, settings)
-        return long_df, prices
+        return long_df, prices, prices
 
 
 def _resample_freq_alias(freq: str) -> str:
@@ -688,11 +734,12 @@ def main() -> None:
         "配置: portfolio_weighting=%s（equal=等权；max_sharpe=夏普；risk_parity=风险平价）"
         % settings.portfolio_weighting
     )
-    long_df, prices = _load_market_data(settings)
+    long_df, research_prices, execution_prices = _load_market_data(settings)
+    prices = research_prices
 
     print("\n构建因子面板（多列原始因子，只计算一次）…")
     try:
-        panel = build_four_factor_panel(prices, long_df, settings)
+        panel = build_four_factor_panel(research_prices, long_df, settings)
     except Exception as e:
         print("因子面板构建失败:", e)
         return
@@ -789,7 +836,7 @@ def main() -> None:
 
     if settings.persist_run_outputs:
         try:
-            paths = save_run_cache(settings, long_df, prices, panel, panel_zscore=panel_zscore)
+            paths = save_run_cache(settings, long_df, execution_prices, panel, panel_zscore=panel_zscore)
             print(
                 "数据已落盘: %s"
                 % ", ".join("%s=%s" % (k, v) for k, v in paths.items())

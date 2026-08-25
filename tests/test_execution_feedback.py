@@ -12,6 +12,8 @@ from config import get_settings
 from live.execution_feedback import (
     build_execution_feedback,
     build_execution_feedback_report,
+    build_next_day_execution_review,
+    build_next_day_review_report,
     save_execution_feedback,
 )
 
@@ -85,6 +87,22 @@ class ExecutionFeedbackTests(unittest.TestCase):
         self.assertIn("真实成交回填与执行偏差分析", report)
         self.assertIn("PARTIAL", report)
 
+        prices = pd.DataFrame(
+            {
+                "date": ["2024-01-31", "2024-02-01"],
+                "AAA": [10.0, 10.4],
+                "BBB": [20.0, 19.5],
+                "CCC": [30.0, 30.2],
+            }
+        )
+        review, review_summary = build_next_day_execution_review(detail, prices)
+        self.assertEqual(str(review_summary.loc[0, "review_date"]), "2024-02-01")
+        self.assertEqual(int(review_summary.loc[0, "n_reviewed"]), 2)
+        self.assertAlmostEqual(float(review_summary.loc[0, "buy_next_day_pnl"]), 150.0)
+        self.assertAlmostEqual(float(review_summary.loc[0, "sell_avoidance_pnl"]), 60.0)
+        review_report = build_next_day_review_report(review, review_summary)
+        self.assertIn("真实成交次日复盘", review_report)
+
     def test_save_execution_feedback(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             settings = replace(
@@ -110,11 +128,22 @@ class ExecutionFeedbackTests(unittest.TestCase):
                 ]
             )
             detail, summary = build_execution_feedback(frame)
-            paths = save_execution_feedback(settings, detail, summary)
+            prices = pd.DataFrame({"date": ["2024-02-01"], "AAA": [10.2]})
+            review, review_summary = build_next_day_execution_review(detail, prices, review_date="2024-02-01")
+            paths = save_execution_feedback(
+                settings,
+                detail,
+                summary,
+                next_day_review=review,
+                next_day_summary=review_summary,
+            )
 
             self.assertTrue(paths["detail"].is_file())
             self.assertTrue(paths["summary"].is_file())
             self.assertTrue(paths["report"].is_file())
+            self.assertTrue(paths["next_day_review"].is_file())
+            self.assertTrue(paths["next_day_summary"].is_file())
+            self.assertTrue(paths["next_day_report"].is_file())
 
 
 if __name__ == "__main__":

@@ -78,6 +78,7 @@ from live.style_exposure_monitor import (
     load_style_exposure,
     summarize_style_exposure_for_report,
 )
+from live.version_freeze import load_freeze_manifest
 
 
 DEFAULT_STRATEGY = "FUSED_ROLLING_SCORE_WEIGHTED"
@@ -336,6 +337,7 @@ def run_daily_paper_from_outputs(
     drawdown_rules_path: Path | None = None,
     capacity_rules_path: Path | None = None,
     liquidity_history_path: Path | None = None,
+    freeze_manifest_path: Path | None = None,
     capacity_lookback_days: int | None = None,
     impact_coefficient_bps: float = 100.0,
     industry_path: Path | None = None,
@@ -356,6 +358,7 @@ def run_daily_paper_from_outputs(
         if liquidity_history_path is not None
         else settings.output_dir / "cache" / "prices_long.csv"
     )
+    freeze_manifest = load_freeze_manifest(freeze_manifest_path)
 
     requested_date = pd.Timestamp(trade_date) if trade_date is not None else None
     price_date, latest_prices = load_latest_prices(price_cache_path, trade_date=requested_date)
@@ -430,6 +433,7 @@ def run_daily_paper_from_outputs(
         "drawdown_rules": drawdown_rules_path if drawdown_rules_path is not None and drawdown_rules_path.exists() else None,
         "capacity_rules": capacity_rules_path if capacity_rules_path is not None and capacity_rules_path.exists() else None,
         "liquidity_history": liquidity_path if liquidity_path.exists() else None,
+        "freeze_manifest": freeze_manifest_path if freeze_manifest_path is not None and freeze_manifest_path.exists() else None,
     }
     result["target_date"] = target_date
     result["price_date"] = price_date
@@ -443,6 +447,7 @@ def run_daily_paper_from_outputs(
     result["guard_issues"] = guard_issues
     factor_monitor = load_factor_decay_monitor(settings, factor_decay_monitor_path)
     result["factor_decay_monitor"] = factor_monitor
+    result["freeze_manifest"] = freeze_manifest
     style_exposure_all = load_style_exposure(settings, style_exposure_path)
     result["style_exposure"] = latest_style_exposure_for_strategy(
         style_exposure_all,
@@ -560,6 +565,7 @@ def format_daily_paper_summary(result: dict[str, Any]) -> str:
     drawdown_control = result.get("drawdown_control")
     capacity_impact_summary = result.get("capacity_impact_summary")
     risk_control_report = result.get("risk_control_report")
+    freeze_manifest = result.get("freeze_manifest") or {}
 
     n_orders = int(len(orders))
     n_pass = int((checks["check_status"] == "PASS").sum()) if not checks.empty else 0
@@ -596,6 +602,17 @@ def format_daily_paper_summary(result: dict[str, Any]) -> str:
             else:
                 lines.append("  %s=%s" % (key, value))
     factor_status, factor_reasons = summarize_factor_health(factor_monitor)
+    if freeze_manifest:
+        policy = freeze_manifest.get("live_policy", {}) or {}
+        git = freeze_manifest.get("git", {}) or {}
+        lines.append(
+            "freeze_manifest=%s strategy=%s git_dirty=%s"
+            % (
+                freeze_manifest.get("as_of_date", ""),
+                policy.get("strategy", ""),
+                bool(git.get("is_dirty", False)),
+            )
+        )
     if factor_monitor is not None and not factor_monitor.empty:
         monitor = factor_monitor.copy()
         if "status" in monitor.columns:
@@ -694,6 +711,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="流动性历史 CSV，含 date/trade_date、symbol/ts_code、amount/turnover；默认 output/cache/prices_long.csv",
     )
+    parser.add_argument(
+        "--freeze-manifest",
+        type=Path,
+        default=None,
+        help="实盘前版本冻结清单 JSON；由 scripts/build_live_version_freeze.py 生成，用于人工确认单审计",
+    )
     parser.add_argument("--capacity-lookback-days", type=int, default=None, help="容量估算平均成交额窗口；默认 Settings.liquidity_lookback_days")
     parser.add_argument("--impact-coefficient-bps", type=float, default=100.0, help="冲击成本估算系数，默认 100 bps * sqrt(参与率)")
     parser.add_argument(
@@ -744,6 +767,7 @@ def run_daily_paper_from_args(settings: Settings, args: argparse.Namespace) -> i
             drawdown_rules_path=args.drawdown_rules,
             capacity_rules_path=args.capacity_rules,
             liquidity_history_path=args.liquidity_history,
+            freeze_manifest_path=args.freeze_manifest,
             capacity_lookback_days=args.capacity_lookback_days,
             impact_coefficient_bps=args.impact_coefficient_bps,
             industry_path=args.industry,

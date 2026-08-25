@@ -49,6 +49,7 @@ class TestExperimentOutputs(unittest.TestCase):
                     "trade_date": [days[0], days[1]],
                     "ts_code": ["AAA", "AAA"],
                     "close": [1.0, 1.1],
+                    "adj_close": [0.9, 1.1],
                     "volume": [100.0, 120.0],
                 }
             )
@@ -58,6 +59,12 @@ class TestExperimentOutputs(unittest.TestCase):
             cache_paths = save_run_cache(settings, long_df, prices, panel, panel_zscore=panel)
             self.assertTrue(cache_paths["factor_panel"].is_file())
             self.assertTrue(cache_paths["factor_panel_zscore"].is_file())
+            self.assertTrue(cache_paths["prices_wide_close"].is_file())
+            self.assertTrue(cache_paths["prices_wide_adj_close"].is_file())
+            close_wide = pd.read_csv(cache_paths["prices_wide_close"], index_col=0)
+            adj_wide = pd.read_csv(cache_paths["prices_wide_adj_close"], index_col=0)
+            self.assertAlmostEqual(float(close_wide.iloc[0]["AAA"]), 1.0)
+            self.assertAlmostEqual(float(adj_wide.iloc[0]["AAA"]), 0.9)
 
             dq_paths = save_data_quality_reports(
                 settings,

@@ -12,6 +12,7 @@ from typing import Any, Dict, Mapping
 import pandas as pd
 
 from config import Settings
+from backtest.backtest_utils import long_to_wide
 
 
 def cache_dir(settings: Settings) -> Path:
@@ -45,6 +46,11 @@ def save_run_cache(
     prices_wide.to_csv(p_wide, date_format="%Y-%m-%d")
     out["prices_wide_close"] = p_wide
 
+    if "adj_close" in long_df.columns and long_df["adj_close"].notna().any():
+        p_wide_adj = base / "prices_wide_adj_close.csv"
+        long_to_wide(long_df, "adj_close").to_csv(p_wide_adj, date_format="%Y-%m-%d")
+        out["prices_wide_adj_close"] = p_wide_adj
+
     p_panel = base / "factor_panel.csv"
     panel_flat = panel.reset_index()
     panel_flat.to_csv(p_panel, index=False, date_format="%Y-%m-%d")
@@ -57,12 +63,15 @@ def save_run_cache(
 
     meta = base / "run_meta.txt"
     meta.write_text(
-        "written_utc=%s\nbacktest_start=%s\nbacktest_end=%s\nprice_col=%s\n"
+        "written_utc=%s\nbacktest_start=%s\nbacktest_end=%s\nprice_col=%s\nresearch_price_col=%s\nexecution_price_col=%s\nadjustment_mode=%s\n"
         % (
             datetime.now(timezone.utc).isoformat(),
             settings.backtest_start,
             settings.backtest_end,
             settings.price_col,
+            getattr(settings, "research_price_col", settings.price_col),
+            getattr(settings, "execution_price_col", settings.price_col),
+            getattr(settings, "adjustment_mode", ""),
         ),
         encoding="utf-8",
     )

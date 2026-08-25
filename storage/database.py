@@ -9,7 +9,7 @@ from typing import Iterable
 from config import Settings
 
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 CORE_TABLES = (
     "prices_daily",
@@ -31,6 +31,8 @@ DDL_STATEMENTS = (
         high REAL,
         low REAL,
         close REAL,
+        adj_factor REAL,
+        adj_close REAL,
         volume REAL,
         amount REAL,
         source TEXT DEFAULT '',
@@ -133,6 +135,10 @@ DDL_STATEMENTS = (
 )
 
 TABLE_COLUMN_MIGRATIONS = {
+    "prices_daily": {
+        "adj_factor": "REAL",
+        "adj_close": "REAL",
+    },
     "fina_indicator": {
         "cfps": "REAL",
         "fcff_ps": "REAL",

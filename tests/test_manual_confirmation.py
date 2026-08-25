@@ -36,6 +36,13 @@ class ManualConfirmationTests(unittest.TestCase):
             )
             result["target_date"] = pd.Timestamp("2024-01-31")
             result["price_date"] = pd.Timestamp("2024-01-31")
+            result["freeze_manifest"] = {
+                "as_of_date": "2024-01-30",
+                "manifest_path": str(Path(td) / "freeze_manifest.json"),
+                "live_policy": {"strategy": "LIVE"},
+                "stock_pool": {"sha256": "abc123"},
+                "git": {"commit": "deadbeef", "is_dirty": False},
+            }
             monitor = pd.DataFrame(
                 [
                     {"factor": "ROE", "status": "WATCH", "reasons": "ic_deteriorated"},
@@ -49,7 +56,11 @@ class ManualConfirmationTests(unittest.TestCase):
 
             self.assertEqual(list(sheet["manual_action"]), ["CONFIRM_WITH_CAUTION"])
             self.assertEqual(str(sheet["factor_health_status"].iloc[0]), "WATCH")
+            self.assertEqual(str(sheet["freeze_as_of_date"].iloc[0]), "2024-01-30")
+            self.assertEqual(str(sheet["freeze_stock_pool_sha256"].iloc[0]), "abc123")
             self.assertIn("小资金人工确认实盘单", report)
+            self.assertIn("版本冻结", report)
+            self.assertIn("2024-01-30", report)
             self.assertIn("ROE:WATCH:ic_deteriorated", report)
             self.assertTrue(paths["csv"].is_file())
             self.assertTrue(paths["markdown"].is_file())

@@ -37,7 +37,7 @@ python scripts/update_database_cache.py
 
 | 表名 | 主键 | 用途 |
 |------|------|------|
-| `prices_daily` | `(trade_date, ts_code)` | 日线行情；当前包含 `open/high/low/close/volume/amount/source/updated_at` |
+| `prices_daily` | `(trade_date, ts_code)` | 日线行情；当前包含 `open/high/low/close/adj_factor/adj_close/volume/amount/source/updated_at` |
 | `fina_indicator` | `(ts_code, ann_date, end_date)` | 财务指标；财务因子按 `ann_date` 对齐，避免未来函数 |
 | `factor_panel_daily` | `(trade_date, ts_code, factor_name, factor_version)` | 日频因子长表；新增因子只增加行，不频繁改宽表字段 |
 | `announcement_events` | `event_key` | 公告事件；用于公告事件因子、公告类型分层和公告风险过滤 |
@@ -49,9 +49,9 @@ python scripts/update_database_cache.py
 
 | 函数 | 输入 | 输出 |
 |------|------|------|
-| `storage.warehouse.upsert_prices_daily` | 行情长表，含 `trade_date/ts_code/open/high/low/close`，可选 `volume/amount` | 写入 `prices_daily`，同一 `(trade_date, ts_code)` 重复时更新 |
+| `storage.warehouse.upsert_prices_daily` | 行情长表，含 `trade_date/ts_code/open/high/low/close`，可选 `adj_factor/adj_close/volume/amount` | 写入 `prices_daily`，同一 `(trade_date, ts_code)` 重复时更新；若有 `adj_factor` 但无 `adj_close`，按前复权口径生成研究价格 |
 | `storage.warehouse.load_prices_daily` | 数据库路径、日期区间、可选股票列表 | 行情长表 |
-| `storage.warehouse.export_price_cache` | 数据库路径、输出目录、日期区间、可选股票列表 | `prices_long.csv` 与 `prices_wide_close.csv` |
+| `storage.warehouse.export_price_cache` | 数据库路径、输出目录、日期区间、可选股票列表 | `prices_long.csv`、交易口径 `prices_wide_close.csv`；若有复权价，额外导出研究口径 `prices_wide_adj_close.csv` |
 | `storage.warehouse.upsert_fina_indicator` | 财务指标表，含 `ts_code/ann_date`，可选 `end_date` 与各类财务字段 | 写入 `fina_indicator`，同一 `(ts_code, ann_date, end_date)` 重复时更新 |
 | `storage.warehouse.upsert_factor_panel_daily` | MultiIndex 因子面板或含 `date/symbol` 的宽表 | 写入 `factor_panel_daily` 长表 |
 | `storage.warehouse.export_factor_panel_cache` | 数据库路径、输出目录、日期区间、可选股票列表 | `factor_panel.csv` |
@@ -86,7 +86,9 @@ python scripts/update_database_cache.py
 | `open` | float64 | 开盘价 |
 | `high` | float64 | 最高价 |
 | `low` | float64 | 最低价 |
-| `close` | float64 | 收盘价（因子与回测默认用收盘价，除非接口显式传入 `price_col`） |
+| `close` | float64 | 原始收盘价；用于真实成交、订单金额和持仓市值 |
+| `adj_factor` | float64 | 复权因子；用于修正除权除息、送转、配股等公司行为造成的历史价格断点 |
+| `adj_close` | float64 | 复权后的研究价格；用于动量、反转、波动率、历史收益和回测收益等研究口径 |
 | `vol` 或 `volume` | float64 | 成交量；读入后可在 `data_feed` 层统一重命名为 `volume` |
 
 可选：`amount`（成交额）、`pct_chg` 等；**缺列时由加载层报错或按 config 填充策略处理**。
@@ -139,6 +141,7 @@ python scripts/update_database_cache.py
 | `live.stock_pool` | `load_stock_pool(path, code_col="股票代码")` | Excel/CSV 股票池文件路径 | 去重后的 Tushare `ts_code` 列表 |
 | `live.stock_pool` | `normalize_ts_code(value)` | 常见股票代码写法 | 规范化为 `000001.SZ` / `600519.SH` 等 Tushare 风格代码 |
 | `live.data_feed` | `get_data_tushare(symbol, start, end, ...)` | 合法 `ts_code`、ISO 日期 | 满足 §2.1 列规范的 `pd.DataFrame`（可含额外列） |
+| `live.data_feed` | `get_adj_factor_tushare(symbol, start, end, ...)` / `fetch_adj_factor_panel(...)` / `merge_adj_factor(...)` | 合法 `ts_code`、ISO 日期、日线行情长表 | 拉取并合并 `adj_factor`，生成研究用 `adj_close` |
 | `live.data_feed` | `load_prices_from_csv(path_or_glob)` | 磁盘路径 | 长表或宽表 + 元数据说明（推荐返回 long 并标准化列名） |
 | `live.cache_io` | `save_run_cache(settings, long_df, prices_wide, panel, panel_zscore=None)` | `Settings`、行情、原始因子面板与可选标准化面板 | 写 `output/cache/` 下 `prices_long.csv`、`factor_panel.csv`、`factor_panel_zscore.csv` 等 |
 | `storage.warehouse` | `upsert_prices_daily`、`upsert_fina_indicator`、`upsert_factor_panel_daily`、`export_price_cache`、`export_factor_panel_cache` | 行情、财务、因子面板 DataFrame 与 SQLite 路径 | 按主键增量写入 SQLite，并导出当前 `main.py` / 日终纸面交易兼容缓存 |
@@ -176,6 +179,8 @@ python scripts/update_database_cache.py
 | `live.paper_report` | `build_daily_paper_report(result)`、`save_daily_paper_report(settings, result)` | 单日纸面运行结果 dict；可读取 `paper_account/<strategy>/snapshots.csv` 计算上一快照变化；若 result 含 `factor_decay_monitor`，展示因子健康状态 | Markdown 日报文本或 `output/paper_reports/<strategy>/<date>.md`；若存在 `broker_orders`，会展示统一券商订单回报；若存在因子失效监控表，会展示 `OK/WATCH/DEGRADED/FAILED` 状态和关键验证指标 |
 | `live.manual_confirmation` | `build_manual_confirmation_sheet(result, factor_monitor=...)`、`save_manual_confirmation(settings, result, factor_monitor=...)` | 单日纸面运行结果 dict；可选 `factor_decay_monitor.csv` 读入表 | 人工确认 CSV / Markdown，默认写 `output/live_orders/<strategy>/<date>_manual_confirm.csv/.md`；只辅助人工复核，不自动下单 |
 | `live.execution_feedback` | `build_execution_feedback(manual_confirmation)`、`save_execution_feedback(settings, detail, summary)` | 人工确认 CSV / DataFrame，需含 `date/strategy/symbol/side/delta_shares/price/estimated_amount`，可选 `executed_qty/executed_price/operator/confirmed_at/execution_note` | 逐笔执行偏差表、汇总表和 Markdown 报告，默认写 `output/execution_feedback/<strategy>/<date>_execution_feedback.csv`、`*_execution_summary.csv`、`*_execution_feedback.md` |
+| `live.performance_attribution` | `build_performance_attribution(snapshots, strategy, trade_date, prices=None, positions=None, execution_feedback=None)`、`save_performance_attribution(settings, strategy, trade_date, summary, stock)` | 账户快照需含 `date/total_asset`，建议含 `cash/market_value/n_positions`；持仓需含 `symbol(or ts_code)/shares`；价格支持宽表或含 `date/symbol/close(or adj_close/price)` 的长表；执行回填可选 | 归因汇总表、逐股票贡献表和 Markdown 报告，默认写 `output/performance_attribution/<strategy>/<date>_performance_attribution_summary.csv`、`<date>_stock_contribution.csv`、`<date>_performance_attribution.md` |
+| `live.deviation_analysis` | `build_live_deviation_analysis(...)`、`save_live_deviation_analysis(settings, strategy, trade_date, summary, position)` | 目标权重 Series / dict / DataFrame；纸面账户快照含 `date/total_asset`；纸面持仓含 `symbol(or ts_code)/shares`；价格支持宽表或长表；券商持仓和执行回填可选 | 偏差汇总表、逐股票偏差表和 Markdown 报告，默认写 `output/live_deviation/<strategy>/<date>_deviation_summary.csv`、`<date>_position_deviation.csv`、`<date>_deviation_report.md` |
 | `live.paper_guard` | `validate_daily_inputs(...)`、`validate_daily_result(result)`、`raise_on_guard_errors(issues)` | 目标权重、最新价格、运行日期、目标权重日期、价格日期、单日纸面运行结果 dict | `GuardIssue` 列表；ERROR 级问题可抛出 `DailyPaperGuardError`，WARNING 级问题供摘要和日报展示 |
 | `live.paper_run_control` | `load_trading_calendar_from_prices(path)`、`validate_daily_run_control(...)`、`has_paper_snapshot(...)` | 价格宽表缓存、策略名、运行日期、交易日日历、是否允许非交易日和重复运行 | 非交易日或重复运行时抛出 `DailyPaperRunControlError`；只读运行 `persist_outputs=False` 不阻断重复快照 |
 | `live.daily_paper_cli` / `scripts/run_daily_paper.py` | `run_daily_paper_from_outputs(...)` / CLI | 已有 `output/rebalance_logs/<strategy>.csv` 与 `output/cache/prices_wide_close.csv`，可选交易状态 CSV 和因子失效监控 CSV，可选关闭日报、人工确认单、guard 或 run control，可选 `--execution-mode simulated_broker` | 调用运行控制、异常检查与 `run_daily_paper_trade`，打印日终摘要，并按配置写订单、检查、成交、账户状态、Markdown 日报和人工确认单；因子健康状态会进入摘要、日报和人工确认单 |
@@ -187,6 +192,8 @@ python scripts/update_database_cache.py
 | `live.broker_reconcile` | `reconcile_paper_with_broker(...)`、`save_reconciliation_outputs(...)` | `Settings`、策略名、只读 `BrokerAdapter`、对账日期和容忍阈值 | 账户差异表、持仓差异表、问题列表，以及 `output/broker_reconciliation/<strategy>/` 下的 CSV / Markdown 报告 |
 | `scripts/reconcile_paper_broker.py` | CLI | 纸面账户状态、券商账户 CSV、券商持仓 CSV | 读取外部导出的只读券商快照，与纸面账户做对账，不下单、不撤单 |
 | `scripts/build_execution_feedback.py` | CLI | 人工确认 CSV；默认读取 `output/live_orders/<strategy>/<date>_manual_confirm.csv`，也可用 `--manual-confirm` 指定 | 调用 `live.execution_feedback`，生成真实成交回填与执行偏差报告；不连接券商、不修改账户 |
+| `scripts/build_live_performance_attribution.py` | CLI | 默认读取 `output/paper_account/<strategy>/snapshots.csv`、`positions.csv`、`output/cache/prices_wide_close.csv` 和可选当天执行回填 CSV；也可用参数显式指定 | 调用 `live.performance_attribution`，生成账户收益、基准收益、主动收益、个股贡献、执行滑点和残差归因报告 |
+| `scripts/build_live_deviation_analysis.py` | CLI | 默认读取 `output/rebalance_logs/<strategy>.csv`、纸面账户快照、纸面持仓、价格缓存和可选当天执行回填；可额外传 `--broker-positions` | 调用 `live.deviation_analysis`，生成目标跟踪、纸面 / 券商持仓同步、未成交和滑点偏差报告 |
 
 ### 4.1 统一券商接口字段
 

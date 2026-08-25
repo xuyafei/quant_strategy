@@ -31,6 +31,7 @@ class StorageWarehouseTests(unittest.TestCase):
                     "high": [10.5, 11.5, 21.0],
                     "low": [9.8, 10.8, 19.5],
                     "close": [10.2, 11.2, 20.5],
+                    "adj_factor": [0.9, 1.0, 1.0],
                     "volume": [1000, 1100, 2000],
                     "amount": [10200, 12320, 41000],
                 }
@@ -45,13 +46,19 @@ class StorageWarehouseTests(unittest.TestCase):
             self.assertEqual(len(loaded), 2)
             close = loaded.set_index("ts_code").loc["600519.SH", "close"]
             self.assertAlmostEqual(float(close), 11.3)
+            self.assertIn("adj_close", loaded.columns)
+            adj_close = loaded.set_index("ts_code").loc["600519.SH", "adj_close"]
+            self.assertAlmostEqual(float(adj_close), 11.3)
 
             paths = export_price_cache(db, Path(td) / "cache", start="2026-08-14")
             self.assertTrue(paths["prices_long"].is_file())
             self.assertTrue(paths["prices_wide_close"].is_file())
+            self.assertTrue(paths["prices_wide_adj_close"].is_file())
             wide = pd.read_csv(paths["prices_wide_close"], index_col=0)
             self.assertIn("600519.SH", wide.columns)
             self.assertAlmostEqual(float(wide.loc["2026-08-14", "600519.SH"]), 11.3)
+            wide_adj = pd.read_csv(paths["prices_wide_adj_close"], index_col=0)
+            self.assertAlmostEqual(float(wide_adj.loc["2026-08-14", "600519.SH"]), 11.3)
 
     def test_upsert_fina_indicator_keeps_cash_flow_columns(self) -> None:
         with tempfile.TemporaryDirectory() as td:
