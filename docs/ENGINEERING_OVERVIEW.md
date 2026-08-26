@@ -11,6 +11,8 @@
 
 **MVP 定稿**：上述闭环 **已实现并可作为交付边界**；`storage.database` 已定义本地 SQLite 基础数据表结构，用于承接长期行情、财务、因子、公告、新闻和股票池快照数据，第一版只建表，不替代现有 CSV 缓存；`live.stock_pool` 与 `scripts/build_live_universe.py` 已可把人工股票池过滤成实盘目标池确认文件；`live.order_builder`、`live.drawdown_control`、`live.capacity_impact`、`live.order_precheck`、`live.risk_blacklist`、`live.risk_gate`、`live.risk_limits`、`live.stress_test`、`live.risk_control_report`、`live.paper_trading`、`live.broker`、`live.broker_factory`、`live.broker_reconcile`、`live.account_state`、`live.paper_runner`、`live.paper_report`、`live.style_exposure_monitor`、`live.factor_health_report`、`live.manual_confirmation`、`live.execution_feedback`、`live.paper_guard`、`live.paper_run_control`、`live.paper_scheduler` 与 `scripts/run_daily_paper.py` / `scripts/run_scheduled_daily_paper.py` / `scripts/build_execution_feedback.py` 已补充为准实盘准备层，可把目标权重转换成订单计划、做回撤降仓、容量冲击、订单预检查、风险门禁、组合风险限额、压力测试和风险总控日报，用虚拟账户或模拟券商验证成交协议，按配置创建模拟或只读券商 Adapter，保存纸面账户状态，生成带因子健康状态、风格暴露、风险门禁、风险限额、压力测试和总控结论的 Markdown 日报和小资金人工确认单，回填真实成交并分析执行偏差，在日终运行前后检查异常，保护交易日运行和重复写入，并提供可交给系统调度器的单次运行入口；日终纸面交易可通过 `--execution-mode simulated_broker` 走统一券商接口；`RealBrokerReadOnlyAdapter` 已提供真实券商只读接入骨架；`broker_reconcile` 可对比纸面账户与只读真实账户差异；**不包含** 真实券商交易 adapter、实时行情订阅、以及 `fuse_models` 中除 `mean_zscore` / `mean` 以外的方法。`main` 未调用 `run_multi_backtest(factors, weights)` 的线性加权路径，属产品取舍而非 MVP 缺口。**融合得分默认**由 **各因子日 IC 的滞后滚动均值** 做 z-score 列权（`fuse_ic_weighted_zscore`，可配置关闭回等权）；IC **不**写入股票层 `maximize_sharpe` / `risk_parity` 的 μ、Σ。
 
+**本次新增**：`live.live_sop` 与 `scripts/build_live_sop.py` 生成小资金实盘每日 SOP，把数据更新、主策略回测、版本冻结、纸面交易、运行监控、风险总控、半自动执行清单、人工执行、成交回填、归因、偏差分析和次日复盘排成当天操作表。它只规定执行顺序，不下单、不修改账户。
+
 **已跑通**：
 
 - 行情：`data/prices_demo.csv`、Tushare 日线本地缓存、Excel/CSV 股票池驱动的 Tushare 多标的日线，或合成宽表兜底。
@@ -38,6 +40,7 @@
 - **换手与成本**：`analysis.turnover` 由 `meta["rebalance_log"]` 计算逐期目标权重变化，补充 `avg_turnover`、`total_turnover`、`estimated_total_cost` 等指标。
 - **风险暴露与集中度**：`analysis.risk_exposure` 由同一份 `rebalance_log` 计算 HHI、`effective_n`、Top 权重和持仓数，补充组合是否过度集中的风控视角。
 - **订单生成、风控总控、统一券商接口、纸面交易、账户状态、每日运行器、日终脚本、日报、人工确认单、真实成交回填、异常检查、运行控制与调度入口**：`live.order_builder.build_order_plan` 将目标权重、当前持仓、最新价格和现金 / 总资产转换为订单计划，字段包括 `BUY/SELL`、目标股数、调整股数、预估金额、当前/目标权重与交易原因；`build_order_plan_from_rebalance_meta` 可从最近一期 `meta["rebalance_log"]` 直接提取目标权重。`live.drawdown_control` 在订单生成前按账户回撤缩放目标仓位；`live.capacity_impact` 用成交额历史估算参与率和冲击成本；`live.order_precheck.precheck_order_plan` 进一步检查现金、可卖数量、买入手数、最小金额、停牌 / 涨停买入 / 跌停卖出约束，并输出 `PASS/BLOCK` 与原因；`live.risk_limits` 汇总单票、行业、现金、分散度、换手、风险门禁和订单阻断等限额；`live.stress_test` 做市场、单票、Top3 和行业压力情景；`live.risk_control_report` 再按 `BLOCK > WATCH > NA > PASS` 汇总成当天总控状态。`live.broker` 定义统一交易适配器协议：查资金、查持仓、查订单、下单、撤单；`SimulatedBroker` 可用同一协议立即成交订单计划；`RealBrokerReadOnlyAdapter` 是真实券商只读骨架，允许查询账户、持仓、订单，禁止下单和撤单；`live.broker_factory.create_broker_adapter` 按 `broker_mode/broker_provider` 创建模拟或只读 Adapter，真实交易模式当前明确报错。`live.paper_trading.run_paper_trading` 只执行 `PASS` 订单，按手续费更新虚拟现金和持仓，并记录 `FILLED/SKIPPED`、现金变化与持仓变化。`live.account_state` 保存 / 读取虚拟现金、持仓和每日账户快照，使纸面账户可以连续运行。`live.paper_runner.run_daily_paper_trade` 将这些步骤串成单日纸面交易入口，默认走旧纸面成交，也可通过 `execution_mode="simulated_broker"` 走统一模拟券商，并把 `broker_orders` 转成兼容的 `paper_trades`。`live.paper_report` 将运行结果写成 Markdown 日报，并展示因子健康状态、关键验证指标、目标组合风格暴露和风险总控日报；`live.style_exposure_monitor` 从 `output/factor_diagnostics/style_exposure.csv` 读取当前策略最近一期风格暴露，只做监控展示，不改变订单。`live.manual_confirmation` 基于订单计划、预检查和可选因子失效监控生成小资金人工确认单，预留真实执行回填字段；`live.execution_feedback` 再读取这些回填字段，对比建议订单与实际成交，输出成交状态、数量差异、滑点和金额差异。`live.paper_guard` 检查目标权重、价格日期、价格有效性、现金、持仓、订单检查和成交日志，ERROR 阻断，WARNING 写入摘要与日报。`live.paper_run_control` 从价格缓存提取交易日日历，默认阻断非交易日运行和同日重复覆盖快照。`live.paper_scheduler` 记录一次调度运行的参数、stdout、stderr 与退出码。`scripts/run_daily_paper.py` 从已有回测输出读取最近目标权重、最新价格、可选因子失效监控表和风格暴露表并打印摘要；`scripts/run_scheduled_daily_paper.py` 适合交给 cron / launchd / 服务器调度器调用；`scripts/build_execution_feedback.py` 用于人工成交回填后的执行偏差复盘。该层已有统一券商接口协议、模拟实现、Factory 和只读骨架，但不连接真实交易 API。
+- **小资金实盘每日 SOP**：`live.live_sop.build_live_daily_sop` 生成当天操作表，字段包括阶段、步骤、执行人、建议命令、应生成产物、通过 / 观察 / 阻断后的处理方式；`scripts/build_live_sop.py` 默认写 `output/live_sop/<strategy>/<date>_daily_sop.csv/.md`。这一层不参与收益计算，不自动下单，只把“每天按什么顺序运行和复盘”固定下来。
 
 **作图**：
 
@@ -120,11 +123,13 @@
 | `live/paper_guard.py` | `validate_daily_inputs`、`validate_daily_result`、`raise_on_guard_errors`：检查日终纸面交易输入与结果异常，区分 ERROR 和 WARNING。 |
 | `live/paper_run_control.py` | `load_trading_calendar_from_prices`、`validate_daily_run_control`：从价格缓存提取交易日日历，阻断非交易日运行和重复覆盖快照。 |
 | `live/paper_scheduler.py` | `run_scheduled_daily_paper`：运行一次日终纸面交易，写调度日志并返回退出码。 |
+| `live/live_sop.py` | `build_live_daily_sop`、`save_live_daily_sop`：生成小资金实盘每日 SOP，把盘前、下单前、人工执行、盘后和次日复盘排成可执行清单。 |
 | `live/daily_paper_cli.py` | `run_daily_paper_from_outputs`、`format_daily_paper_summary`：读取已有调仓日志、价格缓存、可选因子失效监控表和风险黑名单，运行交易日控制、异常检查、日终纸面交易、容量冲击、风险限额、压力测试、风险总控日报、日报和人工确认单生成，并生成命令行摘要；默认接入增强因子健康总览；支持 `execution_mode`。 |
 | `scripts/run_daily_paper.py` | 日终纸面交易命令行入口：调用 `live.daily_paper_cli.main`，支持策略名、交易日、交易状态文件、因子失效监控文件、执行模式、只读检查模式、关闭日报、关闭人工确认单、关闭 guard、允许非交易日和允许重复运行。 |
 | `scripts/build_live_universe.py` | 实盘目标池确认入口：从股票池、价格缓存和可选交易状态生成 `stock_pool_filter_report_<date>.csv` 与 `active_universe_<date>.csv`。 |
 | `scripts/run_scheduled_daily_paper.py` | 调度命令行入口：调用 `live.paper_scheduler.run_scheduled_daily_paper`，透传日终纸面交易参数并写 `output/scheduler_logs/<date>.log`。 |
 | `scripts/build_execution_feedback.py` | 真实成交回填入口：读取人工确认单 CSV，生成 `output/execution_feedback/<strategy>/` 下的逐笔偏差、汇总和 Markdown 报告。 |
+| `scripts/build_live_sop.py` | 小资金实盘每日 SOP 入口：生成 `output/live_sop/<strategy>/<date>_daily_sop.csv/.md`，只规定操作顺序，不下单、不修改账户。 |
 | `scripts/fetch_tushare_announcements.py` | 真实公告源接入入口：读取股票池或显式股票代码，从 Tushare 拉取公告并保存为统一 `announcement_events.csv`。 |
 | `scripts/build_multi_universe_validation.py` | 多股票池验证入口：读取多个已完成回测输出目录，生成策略和因子在不同股票池上的表现明细与稳健性汇总。 |
 | `scripts/build_parameter_sensitivity.py` | 参数敏感性入口：读取已有价格缓存和因子面板，对代表信号做一维参数扰动并输出明细与汇总。 |
@@ -318,7 +323,7 @@
 | 方向 | 说明 |
 |------|------|
 | 作图 | `plot_nav` / `plot_ic` / `plot_weights`；`persist_run_outputs` 时写 IC 与权重 PNG（见 `main`）。 |
-| 实盘链路 | `scripts/build_live_universe.py` 已提供实盘目标池确认，`scripts/run_daily_paper.py` 已提供日终纸面命令，`live.risk_control_report` 已提供风险总控日报，`live.paper_report` 已提供带因子健康状态、风格暴露和总控结论的日报，`live.style_exposure_monitor` 已提供日报风格暴露读取，`live.manual_confirmation` 已提供人工确认单，`live.execution_feedback` 已提供真实成交回填与执行偏差分析，`live.paper_guard` 已提供运行异常检查，`live.paper_run_control` 已提供交易日日历与重复运行保护，`scripts/run_scheduled_daily_paper.py` 已提供系统调度入口，`live.broker` 已提供统一券商接口、模拟券商和真实券商只读骨架，`live.broker_factory` 已提供券商通道选择入口，`live.broker_reconcile` 已提供纸面 / 真实账户只读对账，日终流程已可通过 `--execution-mode simulated_broker` 使用该接口；后续补具体券商 API 同步与真实交易 adapter。 |
+| 实盘链路 | `scripts/build_live_universe.py` 已提供实盘目标池确认，`scripts/run_daily_paper.py` 已提供日终纸面命令，`live.risk_control_report` 已提供风险总控日报，`live.paper_report` 已提供带因子健康状态、风格暴露和总控结论的日报，`live.style_exposure_monitor` 已提供日报风格暴露读取，`live.manual_confirmation` 已提供人工确认单，`live.execution_feedback` 已提供真实成交回填与执行偏差分析，`live.paper_guard` 已提供运行异常检查，`live.paper_run_control` 已提供交易日日历与重复运行保护，`scripts/run_scheduled_daily_paper.py` 已提供系统调度入口，`live.broker` 已提供统一券商接口、模拟券商和真实券商只读骨架，`live.broker_factory` 已提供券商通道选择入口，`live.broker_reconcile` 已提供纸面 / 真实账户只读对账，`live.live_sop` 已提供小资金实盘每日 SOP，日终流程已可通过 `--execution-mode simulated_broker` 使用该接口；后续补具体券商 API 同步与真实交易 adapter。 |
 | 数据存储 | `storage.database` 已提供 SQLite 表结构初始化；`storage.warehouse` 与 `scripts/update_database_cache.py` 已补每日增量 upsert 和从数据库导出 `output/cache` 的桥接脚本；`storage.inspection` 与 `scripts/build_database_quality_report.py` 已补数据库巡检日报。 |
 | 融合扩展 | `fuse_models` 更多 `method`（如 `dynamic`、`xgboost`）。 |
 | 数据 | 启动时读 `output/cache` 命中则跳过 Tushare；或规范落盘至 `data/`。 |

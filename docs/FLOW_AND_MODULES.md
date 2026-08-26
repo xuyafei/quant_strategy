@@ -1,6 +1,6 @@
 # 主流程与各模块说明（含流程图）
 
-本文描述从 `main.py` 入口到 **数据存储工程化 → 因子清洗与行业内标准化 → 数据质量 → IC（含驱动融合列权）→ 因子诊断（Top-K 多头超额 + 分组收益单调性）→ 多因子权重建议 → 样本外验证与因子失效监控 → 因子入选与剔除 → 因子相关性与冗余分析 → 因子分层与复合因子 → 回测（因子 Top-K → 等权 / 夏普 / 风险平价配权）→ 风格层暴露与收益关联 → 基准与超额收益 → 换手与成本 → 风险暴露与集中度 → 绩效与落盘** 的顺序，以及各目录模块在流程中的位置与职责。与 [INTERFACE_AND_CONTRACTS.md](./INTERFACE_AND_CONTRACTS.md) 互补。**下文主体是 MVP 研究回测主流程**；`storage.database` 已作为本地 SQLite 基础数据层，先定义行情、财务、因子、公告、新闻和股票池快照表；`live.order_builder`、`live.drawdown_control`、`live.capacity_impact`、`live.order_precheck`、`live.risk_gate`、`live.risk_limits`、`live.stress_test`、`live.risk_control_report`、`live.paper_trading`、`live.broker`、`live.account_state`、`live.paper_runner`、`live.paper_report`、`live.factor_health_report`、`live.style_exposure_monitor`、`live.manual_confirmation`、`live.execution_feedback`、`live.paper_guard`、`live.paper_run_control`、`live.paper_scheduler` 与 `scripts/run_daily_paper.py` / `scripts/run_scheduled_daily_paper.py` / `scripts/build_unified_risk_gate.py` / `scripts/build_drawdown_control.py` / `scripts/build_capacity_impact.py` / `scripts/build_portfolio_risk_limits.py` / `scripts/build_portfolio_stress_tests.py` / `scripts/build_execution_feedback.py` 已作为准实盘准备层，用于把目标权重转换成订单计划、合并公告 / 舆情 / 人工黑名单风险门禁、检查账户级回撤止损与降仓、估算订单容量与冲击成本、检查组合层统一风险限额、做组合压力测试、汇总风险总控日报、检查可执行性、用虚拟账户或模拟券商验证成交协议、保存纸面账户状态、生成带因子健康、增强因子健康总览、风格暴露、回撤控制、容量冲击、风险限额、压力测试和总控结论的日报和人工确认单、回填真实成交并分析执行偏差、检查异常、保护交易日运行和重复写入，并提供可交给系统调度器的单次运行入口；日终纸面交易已可通过 `--execution-mode simulated_broker` 走统一券商接口，`RealBrokerReadOnlyAdapter` 已提供真实券商只读骨架，但尚未接入真实交易 API。
+本文描述从 `main.py` 入口到 **数据存储工程化 → 因子清洗与行业内标准化 → 数据质量 → IC（含驱动融合列权）→ 因子诊断（Top-K 多头超额 + 分组收益单调性）→ 多因子权重建议 → 样本外验证与因子失效监控 → 因子入选与剔除 → 因子相关性与冗余分析 → 因子分层与复合因子 → 回测（因子 Top-K → 等权 / 夏普 / 风险平价配权）→ 风格层暴露与收益关联 → 基准与超额收益 → 换手与成本 → 风险暴露与集中度 → 绩效与落盘** 的顺序，以及各目录模块在流程中的位置与职责。与 [INTERFACE_AND_CONTRACTS.md](./INTERFACE_AND_CONTRACTS.md) 互补。**下文主体是 MVP 研究回测主流程**；`storage.database` 已作为本地 SQLite 基础数据层，先定义行情、财务、因子、公告、新闻和股票池快照表；`live.order_builder`、`live.drawdown_control`、`live.capacity_impact`、`live.order_precheck`、`live.risk_gate`、`live.risk_limits`、`live.stress_test`、`live.risk_control_report`、`live.paper_trading`、`live.broker`、`live.account_state`、`live.paper_runner`、`live.paper_report`、`live.factor_health_report`、`live.style_exposure_monitor`、`live.manual_confirmation`、`live.execution_feedback`、`live.paper_guard`、`live.paper_run_control`、`live.paper_scheduler`、`live.live_sop` 与 `scripts/run_daily_paper.py` / `scripts/run_scheduled_daily_paper.py` / `scripts/build_unified_risk_gate.py` / `scripts/build_drawdown_control.py` / `scripts/build_capacity_impact.py` / `scripts/build_portfolio_risk_limits.py` / `scripts/build_portfolio_stress_tests.py` / `scripts/build_execution_feedback.py` / `scripts/build_live_sop.py` 已作为准实盘准备层，用于把目标权重转换成订单计划、合并公告 / 舆情 / 人工黑名单风险门禁、检查账户级回撤止损与降仓、估算订单容量与冲击成本、检查组合层统一风险限额、做组合压力测试、汇总风险总控日报、检查可执行性、用虚拟账户或模拟券商验证成交协议、保存纸面账户状态、生成带因子健康、增强因子健康总览、风格暴露、回撤控制、容量冲击、风险限额、压力测试和总控结论的日报和人工确认单、回填真实成交并分析执行偏差、检查异常、保护交易日运行和重复写入，提供可交给系统调度器的单次运行入口，并生成小资金实盘每日 SOP；日终纸面交易已可通过 `--execution-mode simulated_broker` 走统一券商接口，`RealBrokerReadOnlyAdapter` 已提供真实券商只读骨架，但尚未接入真实交易 API。
 
 ---
 
@@ -227,6 +227,11 @@ flowchart TB
         RUNNER --> REPORT["live/paper_report<br/>Markdown 纸面交易日报"]
         REPORT --> REPORTCSV["output/paper_reports/<strategy>/<date>.md"]
         SCHED --> SLOG["output/scheduler_logs/<date>.log"]
+        CHECKLIST["live/semi_auto_checklist<br/>半自动执行决策"] --> SOP["live/live_sop<br/>小资金实盘每日 SOP"]
+        SCRIPT --> SOP
+        RCONTROL --> SOP
+        FEEDBACK --> SOP
+        SOP --> SOPCSV["output/live_sop/<strategy>/<date>_daily_sop.csv/.md"]
     end
 ```
 
@@ -294,6 +299,7 @@ flowchart TB
 | 33B | `live/performance_attribution` / `scripts/build_live_performance_attribution.py` | 读取账户快照、当前持仓、价格缓存和真实成交回填，输出账户收益、股票池等权基准收益、主动收益、个股贡献、执行滑点和未解释残差 | 跑完之后解释“今天赚亏从哪里来”，把结果复盘从看净值推进到看来源 |
 | 33C | `live/deviation_analysis` / `scripts/build_live_deviation_analysis.py` | 比较目标权重、纸面持仓、可选券商持仓和真实成交回填，输出目标跟踪、纸面 / 券商持仓同步、成交未完成和滑点偏差 | 连续运行中盯住账户状态是否越跑越偏，把“收益好坏”和“执行是否贴近目标”分开看 |
 | 33D | `live/semi_auto_checklist` / `scripts/build_semi_auto_checklist.py` | 汇总冻结清单、运行监控、风险总控、人工确认单、纸面日报、成交回填、表现归因和偏差分析，输出半自动执行决策 | 把分散产物压缩成 `READY_FOR_MANUAL_ORDER` / `MANUAL_REVIEW` / `DO_NOT_TRADE`，让人工下单前有一张总控清单 |
+| 33E | `live/live_sop` / `scripts/build_live_sop.py` | 生成当天小资金实盘 SOP，列出盘前、下单前、人工执行、盘后和次日复盘每一步命令、产物、通过 / 观察 / 阻断处理 | 把 100-106 的准实盘模块从“散点工具”整理成每天可照着执行的操作流程 |
 | 34 | `live/paper_guard` | 在日终纸面运行前检查目标权重、价格、日期，在运行后检查现金、持仓、订单检查和成交日志 | 把“看起来跑完了但输入/结果异常”的情况显式暴露；ERROR 阻断，WARNING 进入摘要和日报 |
 | 35 | `live/paper_run_control` | 从价格缓存提取交易日日历，检查运行日是否为交易日，并检查同日纸面账户快照是否已存在 | 防止周末/节假日误写新快照，也防止重复运行无意覆盖账户状态 |
 | 36 | `live/paper_scheduler` / `scripts/run_scheduled_daily_paper.py` | 运行一次日终纸面交易，记录调度参数、stdout、stderr 和退出码 | 让 cron / launchd / 服务器调度器有稳定入口，也让失败有可查日志 |
@@ -345,6 +351,7 @@ flowchart TB
 - **运行失败 / 异常检查（`live.paper_guard`）**：默认随日终脚本启用。目标权重为空、价格缺失、价格无效、目标权重日期或价格日期晚于运行日、运行后现金为负等属于 ERROR；价格日期过旧、所有订单被阻断、成交层全部跳过等属于 WARNING。
 - **交易日日历 / 重复运行保护（`live.paper_run_control`）**：默认随日终脚本启用。交易日日历来自 `prices_wide_close.csv` 的日期列；显式指定非交易日会被阻断，除非使用 `--allow-non-trading-day`。同一策略同一日期已有 `snapshots.csv` 记录时会被阻断，除非使用 `--allow-rerun`。
 - **每日调度入口（`live.paper_scheduler` / `scripts/run_scheduled_daily_paper.py`）**：不在 Python 内部常驻循环，而是包装一次日终纸面交易并记录 `output/scheduler_logs/<date>.log`。系统层可以用 cron / launchd / 服务器任务调度器按固定时间调用它。
+- **小资金实盘每日 SOP（`live.live_sop` / `scripts/build_live_sop.py`）**：把数据更新、主策略回测、版本冻结、纸面交易、运行监控、风险总控、半自动执行清单、人工执行、成交回填、表现归因、偏差分析和次日复盘排成当天操作表。它不下单、不改账户，只让人工执行顺序稳定、可复查。
 - **单次换手上限（`max_rebalance_turnover`）**：在单票上限、行业上限、波动率目标和最小持仓数量之后、撮合之前生效，默认 1.0；首次建仓不节流，之后若新旧目标权重差异和超过上限，则按比例从旧目标向新目标移动，并在 `rebalance_log` 记录 `target_turnover`、`turnover_capped`、`turnover_scale`。
 - **IC 与融合（最小切片）**：各因子日 IC 经 **`shift(1)` + 滚动均值** 得到非负、按日归一的 **列权**，对横截面 z-score 后的多列因子加权求和 → **FUSED 得分** 再参与 Top-K 回测。单因子各列回测仍仅用该列得分，**不受** IC 列权影响。关闭：`config.fusion_use_ic_weights=False` 或缺 IC 时回退 **`fuse_equal_weight_zscore`**。  
 - **IC 分布与稳定性**：`analysis.ic.ic_distribution_summary` 统计 p05/p25/median/p75/p95、正负 IC 占比和极端值；`ic_rolling_stability` 按 `Settings.ic_rolling_windows` 统计滚动均值末值、滚动均值正值比例等，用来判断因子是否只靠少数日期支撑。

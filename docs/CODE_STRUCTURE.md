@@ -42,6 +42,7 @@ flowchart LR
   attribution[live/performance_attribution]
   deviation[live/deviation_analysis]
   checklist[live/semi_auto_checklist]
+  sop[live/live_sop]
   guard[live/paper_guard]
   control[live/paper_run_control]
   scheduler[live/paper_scheduler + scripts/run_scheduled_daily_paper.py]
@@ -107,6 +108,7 @@ flowchart LR
   feedback --> deviation
   attribution --> checklist
   deviation --> checklist
+  checklist --> sop
   cli --> control
   cli --> guard
   control --> runner
@@ -253,6 +255,7 @@ flowchart LR
 | `performance_attribution.py` | **实盘表现归因**：读取账户快照、当前持仓、价格缓存和真实成交回填，拆解账户收益、股票池等权基准收益、主动收益、个股贡献、执行滑点和未解释残差。 |
 | `deviation_analysis.py` | **实盘偏差分析**：比较目标权重、纸面持仓、可选券商持仓和真实成交回填，输出目标跟踪偏差、持仓同步偏差、成交未完成比例和滑点提示。 |
 | `semi_auto_checklist.py` | **半自动实盘执行清单**：汇总冻结清单、运行监控、风险总控、人工确认单、纸面日报、成交回填、表现归因和偏差分析，输出人工下单前总决策。 |
+| `live_sop.py` | **小资金实盘每日 SOP**：把数据更新、主策略回测、版本冻结、纸面交易、运行监控、风险总控、半自动执行清单、人工下单、成交回填、归因、偏差和次日复盘排成当天操作清单。 |
 | `paper_guard.py` | **运行失败 / 异常检查**：在日终纸面运行前后检查目标权重、价格、日期、现金、持仓、订单检查和成交日志；ERROR 阻断，WARNING 进入摘要和日报。 |
 | `paper_run_control.py` | **交易日日历 / 重复运行保护**：从价格缓存提取交易日日历，默认阻断非交易日运行；检查同日纸面账户快照，默认阻断重复覆盖。 |
 | `paper_scheduler.py` | **每日调度封装**：运行一次日终纸面交易并记录 stdout、stderr、参数和退出码，供 cron / launchd / 服务器调度器调用。 |
@@ -272,6 +275,7 @@ flowchart LR
 | `build_live_performance_attribution.py` | **实盘表现归因入口**：默认读取纸面账户快照、当前持仓、价格缓存和当天执行回填，生成归因汇总、逐股票贡献和 Markdown 报告。 |
 | `build_live_deviation_analysis.py` | **实盘偏差分析入口**：默认读取目标权重、纸面账户快照、纸面持仓、价格缓存和可选券商持仓 / 成交回填，生成偏差汇总、逐股票偏差和 Markdown 报告。 |
 | `build_semi_auto_checklist.py` | **半自动实盘执行清单入口**：默认读取冻结清单、运行监控、风险总控、人工确认单、纸面日报、成交回填、表现归因和偏差分析，生成执行清单和总决策。 |
+| `build_live_sop.py` | **小资金实盘每日 SOP 入口**：生成当天操作清单 CSV / Markdown，明确盘前、下单前、人工执行、盘后和次日复盘每一步要跑什么、看什么、什么状态停手。 |
 | `fetch_tushare_announcements.py` | **真实公告源接入入口**：读取股票池或显式股票代码，从 Tushare 拉取公告并保存为统一事件表。 |
 | `fetch_akshare_stock_news.py` | **AkShare 个股新闻入口**：按股票池或显式代码拉取东方财富个股最近新闻，统一保存为 `news_sentiment` 表，并支持和既有缓存合并去重。 |
 | `build_news_sentiment_smoke_backtest.py` | **新闻 / 舆情烟雾回测入口**：读取统一新闻表和近期行情，构造 `NEWS_*` 日频因子，并比较等权基线与负面舆情过滤版的短窗口表现。 |
@@ -313,7 +317,7 @@ flowchart LR
 6. `backtest/backtest_multi.py` + `models/fusion.py` → 多因子接入回测。  
 7. `analysis/ic.py`、`analysis/data_quality.py`、`analysis/factor_diagnostics.py`、`analysis/performance.py`、`analysis/benchmark.py`、`analysis/turnover.py`、`analysis/risk_exposure.py` → IC 分布稳定性、数据质量、因子多头超额、分组收益、绩效、基准、超额收益、换手与成本、集中度。
 8. `storage/` → SQLite 表结构和后续数据库读写层；长期基础数据进数据库，实验结果继续进 `output/`。
-9. `live/` → 数据接入、订单生成、容量与冲击成本、订单预检查、统一风险限额检查、压力测试、风险总控日报、券商通道选择、纸面交易、账户状态、每日纸面运行器、纸面交易日报、增强因子健康总览、人工确认单、真实成交回填、运行异常检查、交易日日历 / 重复运行保护、每日调度封装与日终脚本辅助逻辑；信号生成仍是占位。
+9. `live/` → 数据接入、订单生成、容量与冲击成本、订单预检查、统一风险限额检查、压力测试、风险总控日报、券商通道选择、纸面交易、账户状态、每日纸面运行器、纸面交易日报、增强因子健康总览、人工确认单、真实成交回填、运行异常检查、交易日日历 / 重复运行保护、每日调度封装、半自动执行清单、小资金实盘每日 SOP 与日终脚本辅助逻辑；信号生成仍是占位。
 10. `scripts/` → 日常运行入口，例如数据库初始化、日终纸面交易命令和真实成交回填报告命令。
 
 **文档与代码**需人工同步；无 CI 自动 diff。改 `main` 或契约时请更新 `docs/` 与 `README.md`。
