@@ -41,6 +41,7 @@ flowchart LR
   feedback[live/execution_feedback]
   attribution[live/performance_attribution]
   deviation[live/deviation_analysis]
+  checklist[live/semi_auto_checklist]
   guard[live/paper_guard]
   control[live/paper_run_control]
   scheduler[live/paper_scheduler + scripts/run_scheduled_daily_paper.py]
@@ -104,6 +105,8 @@ flowchart LR
   state --> attribution
   state --> deviation
   feedback --> deviation
+  attribution --> checklist
+  deviation --> checklist
   cli --> control
   cli --> guard
   control --> runner
@@ -249,6 +252,7 @@ flowchart LR
 | `execution_feedback.py` | **真实成交回填与执行偏差分析**：读取人工确认单中的真实成交回填字段，对比系统建议数量、价格、金额和实际执行结果，输出逐笔偏差、成交状态和汇总报告。 |
 | `performance_attribution.py` | **实盘表现归因**：读取账户快照、当前持仓、价格缓存和真实成交回填，拆解账户收益、股票池等权基准收益、主动收益、个股贡献、执行滑点和未解释残差。 |
 | `deviation_analysis.py` | **实盘偏差分析**：比较目标权重、纸面持仓、可选券商持仓和真实成交回填，输出目标跟踪偏差、持仓同步偏差、成交未完成比例和滑点提示。 |
+| `semi_auto_checklist.py` | **半自动实盘执行清单**：汇总冻结清单、运行监控、风险总控、人工确认单、纸面日报、成交回填、表现归因和偏差分析，输出人工下单前总决策。 |
 | `paper_guard.py` | **运行失败 / 异常检查**：在日终纸面运行前后检查目标权重、价格、日期、现金、持仓、订单检查和成交日志；ERROR 阻断，WARNING 进入摘要和日报。 |
 | `paper_run_control.py` | **交易日日历 / 重复运行保护**：从价格缓存提取交易日日历，默认阻断非交易日运行；检查同日纸面账户快照，默认阻断重复覆盖。 |
 | `paper_scheduler.py` | **每日调度封装**：运行一次日终纸面交易并记录 stdout、stderr、参数和退出码，供 cron / launchd / 服务器调度器调用。 |
@@ -267,6 +271,7 @@ flowchart LR
 | `build_execution_feedback.py` | **真实成交回填入口**：读取人工确认单 CSV 中的 `executed_qty`、`executed_price` 等字段，生成执行偏差 CSV 与 Markdown 报告。 |
 | `build_live_performance_attribution.py` | **实盘表现归因入口**：默认读取纸面账户快照、当前持仓、价格缓存和当天执行回填，生成归因汇总、逐股票贡献和 Markdown 报告。 |
 | `build_live_deviation_analysis.py` | **实盘偏差分析入口**：默认读取目标权重、纸面账户快照、纸面持仓、价格缓存和可选券商持仓 / 成交回填，生成偏差汇总、逐股票偏差和 Markdown 报告。 |
+| `build_semi_auto_checklist.py` | **半自动实盘执行清单入口**：默认读取冻结清单、运行监控、风险总控、人工确认单、纸面日报、成交回填、表现归因和偏差分析，生成执行清单和总决策。 |
 | `fetch_tushare_announcements.py` | **真实公告源接入入口**：读取股票池或显式股票代码，从 Tushare 拉取公告并保存为统一事件表。 |
 | `fetch_akshare_stock_news.py` | **AkShare 个股新闻入口**：按股票池或显式代码拉取东方财富个股最近新闻，统一保存为 `news_sentiment` 表，并支持和既有缓存合并去重。 |
 | `build_news_sentiment_smoke_backtest.py` | **新闻 / 舆情烟雾回测入口**：读取统一新闻表和近期行情，构造 `NEWS_*` 日频因子，并比较等权基线与负面舆情过滤版的短窗口表现。 |

@@ -293,6 +293,7 @@ flowchart TB
 | 33A | `live/run_monitor` / `scripts/build_live_run_monitor.py` | 检查冻结清单、目标权重、价格缓存、人工确认单、账户快照、风险总控日报、纸面日报、真实成交回填和次日复盘 | 每天先确认准实盘流程是否完整跑完，把“能不能执行”和“有没有跑完”拆开监控 |
 | 33B | `live/performance_attribution` / `scripts/build_live_performance_attribution.py` | 读取账户快照、当前持仓、价格缓存和真实成交回填，输出账户收益、股票池等权基准收益、主动收益、个股贡献、执行滑点和未解释残差 | 跑完之后解释“今天赚亏从哪里来”，把结果复盘从看净值推进到看来源 |
 | 33C | `live/deviation_analysis` / `scripts/build_live_deviation_analysis.py` | 比较目标权重、纸面持仓、可选券商持仓和真实成交回填，输出目标跟踪、纸面 / 券商持仓同步、成交未完成和滑点偏差 | 连续运行中盯住账户状态是否越跑越偏，把“收益好坏”和“执行是否贴近目标”分开看 |
+| 33D | `live/semi_auto_checklist` / `scripts/build_semi_auto_checklist.py` | 汇总冻结清单、运行监控、风险总控、人工确认单、纸面日报、成交回填、表现归因和偏差分析，输出半自动执行决策 | 把分散产物压缩成 `READY_FOR_MANUAL_ORDER` / `MANUAL_REVIEW` / `DO_NOT_TRADE`，让人工下单前有一张总控清单 |
 | 34 | `live/paper_guard` | 在日终纸面运行前检查目标权重、价格、日期，在运行后检查现金、持仓、订单检查和成交日志 | 把“看起来跑完了但输入/结果异常”的情况显式暴露；ERROR 阻断，WARNING 进入摘要和日报 |
 | 35 | `live/paper_run_control` | 从价格缓存提取交易日日历，检查运行日是否为交易日，并检查同日纸面账户快照是否已存在 | 防止周末/节假日误写新快照，也防止重复运行无意覆盖账户状态 |
 | 36 | `live/paper_scheduler` / `scripts/run_scheduled_daily_paper.py` | 运行一次日终纸面交易，记录调度参数、stdout、stderr 和退出码 | 让 cron / launchd / 服务器调度器有稳定入口，也让失败有可查日志 |
