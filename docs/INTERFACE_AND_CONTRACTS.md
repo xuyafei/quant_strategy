@@ -190,7 +190,9 @@ python scripts/update_database_cache.py
 | `live.broker` | `BrokerAdapter` 协议 | 真实券商 / 模拟券商实现统一方法：`sync/get_account/get_cash/get_positions/get_orders/submit_order/cancel_order` | 交易适配器标准插座；上层不依赖具体券商 API |
 | `live.broker` | `SimulatedBroker` | 初始现金、当前持仓、最新价格、手续费率；可单笔 `submit_order`，也可 `submit_order_plan(order_plan, order_checks=...)` | 模拟立即成交，返回统一 `BrokerOrder` / 订单表；用于验证券商接口协议，不连接真实券商 |
 | `live.broker` | `RealBrokerConfig`、`RealBrokerReadOnlyAdapter` | 券商名、账户标识、只读模式；可注入账户 / 持仓 / 订单快照，未来真实券商 adapter 可覆盖 `sync` | 真实券商只读接入骨架；允许查询账户、持仓、订单，禁止 `submit_order/cancel_order` |
-| `live.broker_factory` | `create_broker_adapter(settings, ...)`、`build_broker_config(settings)` | `Settings.broker_mode`、`broker_provider`、`broker_account_id`，以及可选现金、持仓、价格、账户和订单快照 | 按配置创建 `SimulatedBroker` 或只读 Adapter；真实交易模式当前明确报错，未来 QMT / PTrade / 掘金 Adapter 在这里注册 |
+| `live.broker_factory` | `create_broker_adapter(settings, ...)`、`build_broker_config(settings)` | `Settings.broker_mode`、`broker_provider`、`broker_account_id`，以及可选现金、持仓、价格、账户和订单快照 | 按配置创建 `SimulatedBroker` 或通用只读 Adapter；真实交易模式当前明确报错；具体 QMT 只读同步使用独立安全入口 |
+| `live.qmt_readonly` | `QmtReadOnlyAdapter`、`save_qmt_readonly_snapshot(...)` | 注入已连接并已订阅账户的 `XtQuantTrader` 与 `StockAccount`；只调用资产、持仓、委托、成交查询接口 | 标准化账户 / 持仓 / 委托 / 成交并保存 `output/broker_snapshots/qmt/<account>/<date>/`；继承只读交易阻断 |
+| `live.qmt_acceptance` | `validate_qmt_snapshot(...)`、`audit_qmt_snapshot_history(...)` | 单日 QMT 快照、可选客户端人工核对 CSV，或账户多日快照根目录 | 单日结构 / 金额 / 持仓 / 客户端一致性检查，以及至少 N 个交易日的连续运行验收 |
 | `live.broker_reconcile` | `reconcile_paper_with_broker(...)`、`save_reconciliation_outputs(...)` | `Settings`、策略名、只读 `BrokerAdapter`、对账日期和容忍阈值 | 账户差异表、持仓差异表、问题列表，以及 `output/broker_reconciliation/<strategy>/` 下的 CSV / Markdown 报告 |
 | `scripts/reconcile_paper_broker.py` | CLI | 纸面账户状态、券商账户 CSV、券商持仓 CSV | 读取外部导出的只读券商快照，与纸面账户做对账，不下单、不撤单 |
 | `scripts/build_execution_feedback.py` | CLI | 人工确认 CSV；默认读取 `output/live_orders/<strategy>/<date>_manual_confirm.csv`，也可用 `--manual-confirm` 指定 | 调用 `live.execution_feedback`，生成真实成交回填与执行偏差报告；不连接券商、不修改账户 |
@@ -218,6 +220,10 @@ python scripts/update_database_cache.py
 | `real_trading` | 预留真实交易模式；开启前必须完成只读验证、人工确认和更严格风控 |
 
 `RealBrokerReadOnlyAdapter` 固定只接受 `real_readonly`，收到 `submit_order` 或 `cancel_order` 会抛出 `BrokerReadOnlyError`。
+
+`QmtReadOnlyAdapter` 是首个具体真实券商实现。`scripts/sync_qmt_readonly.py` 仅在安装了 `xtquant` 且 MiniQMT 正常运行的 Windows 环境连接；账号和 userdata 路径通过命令参数或环境变量传入，不写入仓库。
+
+`scripts/audit_qmt_readonly.py --snapshot-dir ...` 校验单日快照并可通过 `--ui-account/--ui-positions` 与客户端人工抄录值核对；`--account-root ... --min-days 5` 检查连续同步天数。工具通过不等于真实接入通过，真实验收必须保留 Windows/MiniQMT 运行证据。
 
 ---
 

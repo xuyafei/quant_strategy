@@ -217,6 +217,8 @@ output/live_freeze/<date>/freeze_report.md
 37. **日终纸面交易接入统一券商接口**：`scripts/run_daily_paper.py --execution-mode simulated_broker` 可把日终订单计划交给 `SimulatedBroker` 执行，并保留原有 `paper_trades`、账户状态和 Markdown 日报输出，同时额外返回统一券商订单回报 `broker_orders`。
 38. **真实券商只读 Adapter 骨架**：`live.broker.RealBrokerReadOnlyAdapter` 和 `RealBrokerConfig` 定义真实券商接入的只读入口，可查询账户、持仓和订单快照；`submit_order/cancel_order` 会抛出 `BrokerReadOnlyError`，防止尚未验证前误下单。
 39. **纸面账户 / 真实账户只读对账**：`live.broker_reconcile` 对比纸面账户和只读券商账户的现金、总资产和逐股票持仓差异；`scripts/reconcile_paper_broker.py` 可读取券商导出的账户 / 持仓 CSV，输出 `output/broker_reconciliation/<strategy>/` 下的 CSV 与 Markdown 对账报告。
+39A. **MiniQMT 真实账户只读同步**：`live.qmt_readonly.QmtReadOnlyAdapter` 只调用 QMT 的资金、持仓、当日委托和当日成交查询接口，`scripts/sync_qmt_readonly.py` 将标准化快照写入 `output/broker_snapshots/qmt/<account>/<date>/`；下单和撤单继续由基类硬阻断。
+39B. **MiniQMT 接入验收**：`live.qmt_acceptance` 与 `scripts/audit_qmt_readonly.py` 检查单日快照结构、账户金额、持仓可用量、客户端人工核对结果和多交易日连续同步；真实 `connect/subscribe`、客户端核对及连续运行证据齐全前，不把 QMT 接入标记为完成。
 40. **风险预警与黑名单机制**：`live.risk_blacklist` 可读取 `data/risk_blacklist.csv` 或 `--risk-blacklist` 指定的 CSV/XLSX，把人工风险、公告观察、舆情观察等标记标准化为有效黑名单；`live.order_precheck` 命中后默认直接 `BLOCK`，`live.paper_report` 和命令摘要会展示风险等级、原因和来源。
 41. **公告事件风险过滤**：`live.event_risk_filter` 从 `announcement_events.csv` 中识别问询、处罚、立案、诉讼、退市风险等负面公告，输出风险候选；`scripts/build_event_risk_filter.py` 可生成 `event_risk_candidates_<date>.csv`，并可选导出 `risk_blacklist_<date>.csv` 供日终纸面交易使用。
 42. **真实公告数据源与负面舆情过滤**：`live.announcement_source` 可把 Tushare 公告接口返回值标准化成 `announcement_events.csv`；`live.negative_sentiment_filter` 可把外部新闻 / 舆情 CSV/XLSX 转成 `BLACKLIST/WATCH` 风险候选，并可选导出黑名单文件接入订单预检查。

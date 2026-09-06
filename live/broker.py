@@ -20,6 +20,7 @@ BROKER_MODE_REAL_READONLY = "real_readonly"
 BROKER_MODE_REAL_TRADING = "real_trading"
 
 ORDER_STATUS_NEW = "NEW"
+ORDER_STATUS_PARTIALLY_FILLED = "PARTIALLY_FILLED"
 ORDER_STATUS_FILLED = "FILLED"
 ORDER_STATUS_REJECTED = "REJECTED"
 ORDER_STATUS_CANCELLED = "CANCELLED"
@@ -193,6 +194,22 @@ def _positions_to_frame(
     *,
     latest_prices: pd.DataFrame | Mapping[str, float] | pd.Series | None = None,
 ) -> pd.DataFrame:
+    if isinstance(positions, pd.DataFrame):
+        symbol_col = "symbol" if "symbol" in positions.columns else "ts_code"
+        if symbol_col in positions.columns and "shares" in positions.columns:
+            out = positions.copy().rename(columns={symbol_col: "symbol"})
+            out["symbol"] = out["symbol"].astype(str)
+            out["shares"] = pd.to_numeric(out["shares"], errors="coerce").fillna(0).round().astype(int)
+            if "available_shares" not in out.columns:
+                out["available_shares"] = out["shares"]
+            if "price" not in out.columns:
+                out["price"] = 0.0
+            if "market_value" not in out.columns:
+                out["market_value"] = out["shares"] * pd.to_numeric(out["price"], errors="coerce").fillna(0.0)
+            if "updated_at" not in out.columns:
+                out["updated_at"] = _now_str()
+            cols = ["symbol", "shares", "available_shares", "price", "market_value", "updated_at"]
+            return out.loc[out["shares"] > 0, cols].reset_index(drop=True)
     prices = _prices_to_series(latest_prices)
     series = _positions_to_series(positions)
     rows: list[dict[str, Any]] = []
