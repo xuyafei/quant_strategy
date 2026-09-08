@@ -19,6 +19,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from live.universe_history import (
+    load_membership_intervals,
+    mask_factor_panel_by_membership,
+    mask_wide_prices_by_membership,
+    membership_mask,
+)
+
 from analysis.benchmark import (
     equal_weight_benchmark_nav,
     excess_nav_frame,
@@ -50,9 +57,11 @@ from analysis.style_exposure import (
 )
 from analysis.factor_validation import (
     build_factor_decay_monitor,
+    build_multi_horizon_out_of_sample_validation,
     build_out_of_sample_validation,
     build_rolling_out_of_sample_validation,
     save_factor_validation_outputs,
+    summarize_multi_horizon_validation,
     summarize_rolling_out_of_sample_validation,
 )
 from analysis.ic import (
@@ -736,6 +745,7 @@ def main() -> None:
     )
     long_df, research_prices, execution_prices = _load_market_data(settings)
     prices = research_prices
+    benchmark_prices = prices
 
     print("\n构建因子面板（多列原始因子，只计算一次）…")
     try:
@@ -743,6 +753,19 @@ def main() -> None:
     except Exception as e:
         print("因子面板构建失败:", e)
         return
+
+    membership_path = getattr(settings, "universe_membership_path", None)
+    membership = None
+    eligible_mask = None
+    if membership_path is not None:
+        membership = load_membership_intervals(membership_path)
+        panel = mask_factor_panel_by_membership(panel, membership)
+        eligible_mask = membership_mask(panel.index, membership)
+        benchmark_prices = mask_wide_prices_by_membership(prices, membership)
+        print(
+            "已启用时点股票池: %s；完整价格用于持仓估值，成员掩码仅用于选股和基准"
+            % membership_path
+        )
 
     print(
         "面板形状: %d 行 × %d 列 (列=%s)"
@@ -760,6 +783,10 @@ def main() -> None:
                 feature_cols=factor_order,
             )
             if ml_score.notna().sum() > 0:
+                if membership is not None:
+                    ml_score = mask_factor_panel_by_membership(
+                        ml_score.to_frame(ML_SCORE_NAME), membership
+                    )[ML_SCORE_NAME]
                 panel[ML_SCORE_NAME] = ml_score.reindex(panel.index)
                 factor_order.append(ML_SCORE_NAME)
                 backend = (
@@ -808,12 +835,12 @@ def main() -> None:
     try:
         rebalance_dates = _last_rebalance_dates(prices, settings)
         data_quality_reports = {
-            "price_coverage": price_coverage(prices),
-            "factor_coverage": factor_coverage(panel),
-            "factor_daily_coverage": factor_daily_coverage(panel),
+            "price_coverage": price_coverage(benchmark_prices),
+            "factor_coverage": factor_coverage(panel, eligible_mask=eligible_mask),
+            "factor_daily_coverage": factor_daily_coverage(panel, eligible_mask=eligible_mask),
             "rebalance_coverage": rebalance_coverage(
                 panel,
-                prices,
+                benchmark_prices,
                 rebalance_dates,
                 factors=factor_order,
             ),
@@ -1003,6 +1030,8 @@ def main() -> None:
     factor_decay_monitor = pd.DataFrame()
     rolling_out_of_sample_validation = pd.DataFrame()
     rolling_out_of_sample_summary = pd.DataFrame()
+    multi_horizon_validation = pd.DataFrame()
+    multi_horizon_summary = pd.DataFrame()
     score_weighted_weights_by_factor: dict[str, float] = {}
     score_weighted_meta: dict[str, object] = {}
     fused_rolling_score_weighted = pd.Series(dtype=float)
@@ -1018,6 +1047,7 @@ def main() -> None:
             rebalance_freq=settings.rebalance_freq,
             price_col=settings.price_col,
             periods=settings.trading_days_per_year,
+            benchmark_prices=benchmark_prices,
         )
         if long_excess_summary.empty:
             print("【多头超额】跳过: 无有效因子列\n")
@@ -1110,6 +1140,7 @@ def main() -> None:
             settings,
             factors=factor_order,
             train_ratio=settings.factor_weight_train_ratio,
+            benchmark_prices=benchmark_prices,
         )
         factor_decay_monitor = build_factor_decay_monitor(out_of_sample_validation)
         rolling_out_of_sample_validation = build_rolling_out_of_sample_validation(
@@ -1117,9 +1148,25 @@ def main() -> None:
             prices,
             settings,
             factors=factor_order,
+            benchmark_prices=benchmark_prices,
         )
         rolling_out_of_sample_summary = summarize_rolling_out_of_sample_validation(
             rolling_out_of_sample_validation
+        )
+        multi_horizon_validation = build_multi_horizon_out_of_sample_validation(
+            research_panel[factor_order].dropna(axis=1, how="all"),
+            prices,
+            settings,
+            factors=factor_order,
+            horizons=tuple(getattr(settings, "factor_validation_horizons", (1, 5, 20))),
+            include_next_rebalance=bool(
+                getattr(settings, "factor_validation_include_next_rebalance", True)
+            ),
+            train_ratio=settings.factor_weight_train_ratio,
+            benchmark_prices=benchmark_prices,
+        )
+        multi_horizon_summary = summarize_multi_horizon_validation(
+            multi_horizon_validation
         )
         if out_of_sample_validation.empty:
             print("【样本外】跳过: 无有效验证结果\n")
@@ -1155,14 +1202,34 @@ def main() -> None:
             )
             for rec in rolling_out_of_sample_summary.head(8).to_dict("records"):
                 print(
-                    "【滚动样本外】%s  status=%s  stable=%.2f%%  valIC=%.4f  valExcess=%.4f  topBottom=%.4f"
+                    "【滚动样本外】%s  status=%s  supportive=%.2f%%  strict=%.2f%%  valIC=%.4f  valExcess=%.4f  topBottom=%.4f"
                     % (
                         rec["factor"],
                         rec["status"],
+                        float(rec["supportive_window_rate"]) * 100.0,
                         float(rec["stable_window_rate"]) * 100.0,
                         float(rec["avg_validation_ic_mean"]),
                         float(rec["avg_validation_excess_ann_return"]),
                         float(rec["avg_validation_top_minus_bottom_ann"]),
+                    )
+                )
+            print()
+        if not multi_horizon_summary.empty:
+            for rec in multi_horizon_summary.sort_values(
+                ["supportive_horizon_rate", "mean_validation_ic"], ascending=False
+            ).to_dict("records"):
+                print(
+                    "【多期限样本外】%s  status=%s  support=%d/%d  "
+                    "IC(1/5/20/next)=%.4f/%.4f/%.4f/%.4f"
+                    % (
+                        rec["factor"],
+                        rec["status"],
+                        int(rec["supportive_horizons"]),
+                        int(rec["available_horizons"]),
+                        float(rec["ic_1d"]),
+                        float(rec["ic_5d"]),
+                        float(rec["ic_20d"]),
+                        float(rec["ic_next_rebalance"]),
                     )
                 )
             print()
@@ -1177,6 +1244,8 @@ def main() -> None:
             factor_coverage=coverage_frame,
             factor_weight_summary=factor_weight_summary,
             factor_decay_monitor=factor_decay_monitor,
+            multi_horizon_summary=multi_horizon_summary,
+            rolling_out_of_sample_summary=rolling_out_of_sample_summary,
         )
         fusion_factor_order = selected_factors_for_fusion(factor_selection_summary, factor_order)
         if factor_selection_summary.empty:
@@ -1416,6 +1485,8 @@ def main() -> None:
         or not factor_decay_monitor.empty
         or not rolling_out_of_sample_validation.empty
         or not rolling_out_of_sample_summary.empty
+        or not multi_horizon_validation.empty
+        or not multi_horizon_summary.empty
     ):
         try:
             diag_paths = save_factor_diagnostics(
@@ -1445,6 +1516,8 @@ def main() -> None:
                 or not factor_decay_monitor.empty
                 or not rolling_out_of_sample_validation.empty
                 or not rolling_out_of_sample_summary.empty
+                or not multi_horizon_validation.empty
+                or not multi_horizon_summary.empty
             ):
                 validation_paths = save_factor_validation_outputs(
                     settings,
@@ -1452,6 +1525,8 @@ def main() -> None:
                     factor_decay_monitor,
                     rolling_validation=rolling_out_of_sample_validation,
                     rolling_summary=rolling_out_of_sample_summary,
+                    multi_horizon_validation=multi_horizon_validation,
+                    multi_horizon_summary=multi_horizon_summary,
                 )
                 print(
                     "样本外验证已保存: %s"
@@ -1643,7 +1718,7 @@ def main() -> None:
         try:
             nav_index = pd.DataFrame(nav_curves).index
             benchmark_nav = equal_weight_benchmark_nav(
-                prices,
+                benchmark_prices,
                 dates=nav_index,
                 price_col=settings.price_col,
             )

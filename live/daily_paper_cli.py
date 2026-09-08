@@ -84,12 +84,6 @@ from live.version_freeze import load_freeze_manifest
 DEFAULT_STRATEGY = "FUSED_ROLLING_SCORE_WEIGHTED"
 
 
-def _to_bool_series(series: pd.Series) -> pd.Series:
-    if series.dtype == bool:
-        return series
-    return series.astype(str).str.strip().str.lower().isin({"1", "true", "yes", "y"})
-
-
 def load_latest_target_weights(
     path: Path,
     *,
@@ -116,8 +110,8 @@ def load_latest_target_weights(
 
     latest_date = frame["date"].max()
     latest = frame[frame["date"] == latest_date].copy()
-    if "selected" in latest.columns:
-        latest = latest[_to_bool_series(latest["selected"])]
+    # `selected` 只表示本期信号是否把标的选入 Top-K。换手上限可能让上期持仓以
+    # selected=False、weight>0 的形式继续保留；这里读取的是最终目标组合，不能丢掉它们。
     latest["weight"] = pd.to_numeric(latest["weight"], errors="coerce").fillna(0.0)
     latest = latest[latest["weight"] > 0.0]
     if latest.empty:

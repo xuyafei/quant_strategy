@@ -12,8 +12,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from analysis.factor_diagnostics import batch_factor_group_returns, batch_factor_long_excess
+from analysis.factor_diagnostics import (
+    _last_trading_dates,
+    batch_factor_group_returns,
+    batch_factor_long_excess,
+)
 from analysis.ic import daily_ic_spearman, ic_distribution_summary
+from backtest.backtest_utils import prices_to_wide_close
 from config import Settings
 
 
@@ -101,9 +106,51 @@ ROLLING_SUMMARY_COLUMNS = [
     "avg_validation_monotonicity_score",
     "avg_ic_mean_delta",
     "avg_excess_ann_delta",
+    "supportive_window_rate",
     "stable_window_rate",
     "status",
 ]
+
+MULTI_HORIZON_COLUMNS = ["horizon", "horizon_days"] + VALIDATION_COLUMNS
+MULTI_HORIZON_SUMMARY_COLUMNS = [
+    "factor",
+    "available_horizons",
+    "supportive_horizons",
+    "supportive_horizon_rate",
+    "mean_validation_ic",
+    "ic_1d",
+    "ic_5d",
+    "ic_20d",
+    "ic_next_rebalance",
+    "status",
+]
+
+
+def _next_rebalance_ic(
+    factor: pd.Series,
+    prices: pd.DataFrame,
+    *,
+    rebalance_freq: str,
+    price_col: str,
+    min_names: int = 3,
+) -> pd.Series:
+    """调仓日因子截面与持有至下一调仓日收益的 Spearman IC。"""
+    wide = prices_to_wide_close(prices, close_col=price_col).sort_index().sort_index(axis=1)
+    dates = _last_trading_dates(pd.DatetimeIndex(wide.index), rebalance_freq)
+    values: dict[pd.Timestamp, float] = {}
+    for start, end in zip(dates[:-1], dates[1:]):
+        try:
+            score = factor.xs(pd.Timestamp(start), level="date").astype(float).rename("factor")
+        except KeyError:
+            continue
+        future_return = (wide.loc[end] / wide.loc[start] - 1.0).rename("forward_return")
+        joined = pd.concat([score, future_return], axis=1).dropna()
+        values[pd.Timestamp(start)] = (
+            float(joined["factor"].corr(joined["forward_return"], method="spearman"))
+            if len(joined) >= int(min_names)
+            else np.nan
+        )
+    return pd.Series(values, name="ic").sort_index()
 
 
 def split_train_validation_dates(
@@ -155,6 +202,9 @@ def _segment_metrics(
     factors: list[str],
     settings: Settings,
     segment: str,
+    benchmark_prices: pd.DataFrame | None = None,
+    ic_forward_days: int | None = None,
+    ic_to_next_rebalance: bool = False,
 ) -> pd.DataFrame:
     ic_by_name: dict[str, pd.Series] = {}
     for factor in factors:
@@ -164,11 +214,21 @@ def _segment_metrics(
         if ser.notna().sum() == 0:
             continue
         try:
-            ic_by_name[factor] = daily_ic_spearman(
-                ser,
-                prices,
-                forward_days=settings.ic_forward_days,
-            )
+            if ic_to_next_rebalance:
+                ic_by_name[factor] = _next_rebalance_ic(
+                    ser,
+                    prices,
+                    rebalance_freq=settings.rebalance_freq,
+                    price_col=settings.price_col,
+                )
+            else:
+                ic_by_name[factor] = daily_ic_spearman(
+                    ser,
+                    prices,
+                    forward_days=int(
+                        ic_forward_days if ic_forward_days is not None else settings.ic_forward_days
+                    ),
+                )
         except Exception:
             continue
 
@@ -191,6 +251,7 @@ def _segment_metrics(
         rebalance_freq=settings.rebalance_freq,
         price_col=settings.price_col,
         periods=settings.trading_days_per_year,
+        benchmark_prices=benchmark_prices,
     )
     if long_summary.empty:
         long_summary = pd.DataFrame(
@@ -253,6 +314,9 @@ def build_out_of_sample_validation(
     *,
     factors: list[str] | None = None,
     train_ratio: float | None = None,
+    benchmark_prices: pd.DataFrame | None = None,
+    ic_forward_days: int | None = None,
+    ic_to_next_rebalance: bool = False,
 ) -> pd.DataFrame:
     """生成训练段与样本外验证段的因子评价对照表。"""
     if not isinstance(panel.index, pd.MultiIndex):
@@ -268,14 +332,33 @@ def build_out_of_sample_validation(
     validation_panel = _panel_on_dates(panel[factor_list], validation_dates)
     train_prices = prices.loc[pd.Index(prices.index).isin(train_dates)]
     validation_prices = prices.loc[pd.Index(prices.index).isin(validation_dates)]
+    train_benchmark = None
+    validation_benchmark = None
+    if benchmark_prices is not None:
+        train_benchmark = benchmark_prices.loc[pd.Index(benchmark_prices.index).isin(train_dates)]
+        validation_benchmark = benchmark_prices.loc[
+            pd.Index(benchmark_prices.index).isin(validation_dates)
+        ]
 
-    train = _segment_metrics(train_panel, train_prices, factors=factor_list, settings=settings, segment="train")
+    train = _segment_metrics(
+        train_panel,
+        train_prices,
+        factors=factor_list,
+        settings=settings,
+        segment="train",
+        benchmark_prices=train_benchmark,
+        ic_forward_days=ic_forward_days,
+        ic_to_next_rebalance=ic_to_next_rebalance,
+    )
     validation = _segment_metrics(
         validation_panel,
         validation_prices,
         factors=factor_list,
         settings=settings,
         segment="validation",
+        benchmark_prices=validation_benchmark,
+        ic_forward_days=ic_forward_days,
+        ic_to_next_rebalance=ic_to_next_rebalance,
     )
     out = train.merge(validation, on="factor", how="outer")
     out.insert(1, "train_start", pd.Timestamp(train_dates[0]).strftime("%Y-%m-%d"))
@@ -339,6 +422,7 @@ def build_rolling_out_of_sample_validation(
     validation_days: int | None = None,
     step_days: int | None = None,
     min_validation_days: int | None = None,
+    benchmark_prices: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     生成滚动样本外验证表。
@@ -377,13 +461,30 @@ def build_rolling_out_of_sample_validation(
         validation_panel = _panel_on_dates(panel[factor_list], validation_dates)
         train_prices = prices.loc[pd.Index(prices.index).isin(train_dates)]
         validation_prices = prices.loc[pd.Index(prices.index).isin(validation_dates)]
-        train = _segment_metrics(train_panel, train_prices, factors=factor_list, settings=settings, segment="train")
+        train_benchmark = None
+        validation_benchmark = None
+        if benchmark_prices is not None:
+            train_benchmark = benchmark_prices.loc[
+                pd.Index(benchmark_prices.index).isin(train_dates)
+            ]
+            validation_benchmark = benchmark_prices.loc[
+                pd.Index(benchmark_prices.index).isin(validation_dates)
+            ]
+        train = _segment_metrics(
+            train_panel,
+            train_prices,
+            factors=factor_list,
+            settings=settings,
+            segment="train",
+            benchmark_prices=train_benchmark,
+        )
         validation = _segment_metrics(
             validation_panel,
             validation_prices,
             factors=factor_list,
             settings=settings,
             segment="validation",
+            benchmark_prices=validation_benchmark,
         )
         out = train.merge(validation, on="factor", how="outer")
         out.insert(0, "window_id", int(window_id))
@@ -436,9 +537,15 @@ def summarize_rolling_out_of_sample_validation(rolling_validation: pd.DataFrame)
             & (val_tb.fillna(-np.inf) > 0.0)
         )
         stable_rate = float(stable_mask.mean()) if n_windows else np.nan
-        if np.isfinite(stable_rate) and stable_rate >= 0.6:
+        supportive_count = (
+            (val_ic.fillna(-np.inf) > 0.0).astype(int)
+            + (val_excess.fillna(-np.inf) > 0.0).astype(int)
+            + (val_tb.fillna(-np.inf) > 0.0).astype(int)
+        )
+        supportive_rate = float((supportive_count >= 2).mean()) if n_windows else np.nan
+        if np.isfinite(supportive_rate) and supportive_rate >= 0.6:
             status = "ROBUST"
-        elif np.isfinite(stable_rate) and stable_rate >= 0.3:
+        elif np.isfinite(supportive_rate) and supportive_rate >= 0.3:
             status = "WATCH"
         else:
             status = "UNSTABLE"
@@ -458,6 +565,7 @@ def summarize_rolling_out_of_sample_validation(rolling_validation: pd.DataFrame)
                 "avg_validation_monotonicity_score": float(val_mono.mean()) if val_mono.notna().any() else np.nan,
                 "avg_ic_mean_delta": float(ic_delta.mean()) if ic_delta.notna().any() else np.nan,
                 "avg_excess_ann_delta": float(excess_delta.mean()) if excess_delta.notna().any() else np.nan,
+                "supportive_window_rate": supportive_rate,
                 "stable_window_rate": stable_rate,
                 "status": status,
             }
@@ -468,10 +576,108 @@ def summarize_rolling_out_of_sample_validation(rolling_validation: pd.DataFrame)
     order = {"ROBUST": 0, "WATCH": 1, "UNSTABLE": 2}
     out["_order"] = out["status"].map(order).fillna(3).astype(int)
     out = out.sort_values(
-        ["_order", "stable_window_rate", "avg_validation_excess_ann_return", "factor"],
+        ["_order", "supportive_window_rate", "avg_validation_excess_ann_return", "factor"],
         ascending=[True, False, False, True],
     ).drop(columns=["_order"])
     return out[ROLLING_SUMMARY_COLUMNS].reset_index(drop=True)
+
+
+def build_multi_horizon_out_of_sample_validation(
+    panel: pd.DataFrame,
+    prices: pd.DataFrame,
+    settings: Settings,
+    *,
+    factors: list[str] | None = None,
+    horizons: tuple[int, ...] = (1, 5, 20),
+    include_next_rebalance: bool = True,
+    train_ratio: float | None = None,
+    benchmark_prices: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """按多个固定期限及“持有至下一调仓日”生成同口径样本外验证。"""
+    frames: list[pd.DataFrame] = []
+    for horizon in dict.fromkeys(int(x) for x in horizons if int(x) > 0):
+        result = build_out_of_sample_validation(
+            panel,
+            prices,
+            settings,
+            factors=factors,
+            train_ratio=train_ratio,
+            benchmark_prices=benchmark_prices,
+            ic_forward_days=horizon,
+        )
+        result.insert(0, "horizon", f"{horizon}D")
+        result.insert(1, "horizon_days", horizon)
+        frames.append(result[MULTI_HORIZON_COLUMNS])
+    if include_next_rebalance:
+        result = build_out_of_sample_validation(
+            panel,
+            prices,
+            settings,
+            factors=factors,
+            train_ratio=train_ratio,
+            benchmark_prices=benchmark_prices,
+            ic_to_next_rebalance=True,
+        )
+        result.insert(0, "horizon", "NEXT_REBALANCE")
+        result.insert(1, "horizon_days", np.nan)
+        frames.append(result[MULTI_HORIZON_COLUMNS])
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=MULTI_HORIZON_COLUMNS)
+
+
+def summarize_multi_horizon_validation(validation: pd.DataFrame) -> pd.DataFrame:
+    """汇总多期限IC支持度，避免单一期限决定因子生死。"""
+    if validation.empty:
+        return pd.DataFrame(columns=MULTI_HORIZON_SUMMARY_COLUMNS)
+    rows: list[dict[str, Any]] = []
+    for factor, group in validation.groupby("factor", sort=True):
+        metrics = group[["horizon", "validation_ic_mean", "validation_positive_rate"]].copy()
+        metrics["validation_ic_mean"] = pd.to_numeric(
+            metrics["validation_ic_mean"], errors="coerce"
+        )
+        metrics["validation_positive_rate"] = pd.to_numeric(
+            metrics["validation_positive_rate"], errors="coerce"
+        )
+        available = metrics[metrics["validation_ic_mean"].notna()].copy()
+        supportive = available[
+            (available["validation_ic_mean"] > 0.0)
+            & (available["validation_positive_rate"] >= 0.5)
+        ]
+        n_available = int(len(available))
+        n_supportive = int(len(supportive))
+        rate = float(n_supportive / n_available) if n_available else np.nan
+        next_rebalance_supportive = bool(
+            (
+                (supportive["horizon"] == "NEXT_REBALANCE")
+                if not supportive.empty
+                else pd.Series(dtype=bool)
+            ).any()
+        )
+        if np.isfinite(rate) and rate >= 0.75 and next_rebalance_supportive:
+            status = "ROBUST"
+        elif np.isfinite(rate) and rate >= 0.5:
+            status = "SUPPORTIVE"
+        elif np.isfinite(rate) and rate > 0.0:
+            status = "WEAK"
+        else:
+            status = "FAILED"
+        by_horizon = metrics.set_index("horizon")["validation_ic_mean"]
+        rows.append(
+            {
+                "factor": str(factor),
+                "available_horizons": n_available,
+                "supportive_horizons": n_supportive,
+                "supportive_horizon_rate": rate,
+                "mean_validation_ic": float(available["validation_ic_mean"].mean())
+                if n_available
+                else np.nan,
+                "ic_1d": float(by_horizon.get("1D", np.nan)),
+                "ic_5d": float(by_horizon.get("5D", np.nan)),
+                "ic_20d": float(by_horizon.get("20D", np.nan)),
+                "ic_next_rebalance": float(by_horizon.get("NEXT_REBALANCE", np.nan)),
+                "status": status,
+            }
+        )
+    return pd.DataFrame(rows, columns=MULTI_HORIZON_SUMMARY_COLUMNS)
 
 
 def build_factor_decay_monitor(
@@ -571,6 +777,8 @@ def save_factor_validation_outputs(
     monitor: pd.DataFrame,
     rolling_validation: pd.DataFrame | None = None,
     rolling_summary: pd.DataFrame | None = None,
+    multi_horizon_validation: pd.DataFrame | None = None,
+    multi_horizon_summary: pd.DataFrame | None = None,
 ) -> dict[str, Path]:
     """写入 output/factor_validation/ 下的样本外验证和失效监控表。"""
     base = settings.output_dir / "factor_validation"
@@ -587,4 +795,10 @@ def save_factor_validation_outputs(
     if rolling_summary is not None:
         paths["rolling_out_of_sample_summary"] = base / "rolling_out_of_sample_summary.csv"
         rolling_summary.to_csv(paths["rolling_out_of_sample_summary"], index=False)
+    if multi_horizon_validation is not None:
+        paths["multi_horizon_validation"] = base / "multi_horizon_validation.csv"
+        multi_horizon_validation.to_csv(paths["multi_horizon_validation"], index=False)
+    if multi_horizon_summary is not None:
+        paths["multi_horizon_summary"] = base / "multi_horizon_summary.csv"
+        multi_horizon_summary.to_csv(paths["multi_horizon_summary"], index=False)
     return paths

@@ -22,6 +22,7 @@ class Settings:
     data_dir: Path
     output_dir: Path
     stock_pool_path: Path
+    universe_membership_path: Path | None = None
     stock_pool_code_col: str = "股票代码"
     database_path: Path | None = None
     tushare_price_cache_path: Path | None = None
@@ -61,6 +62,9 @@ class Settings:
     factor_industry_min_count: int = 3
     # IC：因子 @ 日 t 与前瞻收盘收益 close(t+h)/close(t)-1 的截面 Spearman；h=1 为最常见日频口径
     ic_forward_days: int = 1
+    # 因子准入同时验证短、中、月度近似期限，并额外检查持有至下一调仓日。
+    factor_validation_horizons: tuple[int, ...] = (1, 5, 20)
+    factor_validation_include_next_rebalance: bool = True
     # IC 稳定性诊断：对日 IC 做滚动均值/波动/正值占比统计的窗口。
     ic_rolling_windows: tuple[int, ...] = (20, 60)
     # 因子分组收益：按调仓日横截面分成 N 组，观察低分组到高分组的收益单调性。
@@ -131,6 +135,8 @@ def get_settings() -> Settings:
     output_dir = Path(output_env).expanduser() if output_env else root / "output"
     stock_pool_env = os.environ.get("QUANT_STOCK_POOL_PATH", "").strip()
     stock_pool_path = Path(stock_pool_env).expanduser() if stock_pool_env else data_dir / "stock_pool.xlsx"
+    membership_env = os.environ.get("QUANT_UNIVERSE_MEMBERSHIP_PATH", "").strip()
+    universe_membership_path = Path(membership_env).expanduser() if membership_env else None
     database_env = os.environ.get("QUANT_DATABASE_PATH", "").strip()
     database_path = Path(database_env).expanduser() if database_env else data_dir / "quant_strategy.db"
     cache_env = os.environ.get("QUANT_TUSHARE_PRICE_CACHE", "").strip()
@@ -156,11 +162,21 @@ def get_settings() -> Settings:
         "yes",
         "y",
     }
+
+    def _float_env(name: str, default: float) -> float:
+        value = os.environ.get(name, "").strip()
+        return float(value) if value else float(default)
+
+    def _int_env(name: str, default: int) -> int:
+        value = os.environ.get(name, "").strip()
+        return int(value) if value else int(default)
+
     return Settings(
         project_root=root,
         data_dir=data_dir,
         output_dir=output_dir,
         stock_pool_path=stock_pool_path,
+        universe_membership_path=universe_membership_path,
         database_path=database_path,
         tushare_price_cache_path=tushare_cache,
         fina_indicator_cache_path=fina_cache,
@@ -172,6 +188,32 @@ def get_settings() -> Settings:
         broker_provider=broker_provider,
         broker_account_id=broker_account_id,
         factor_standardize_by_industry=standardize_by_industry,
+        portfolio_weighting=(
+            os.environ.get("QUANT_PORTFOLIO_WEIGHTING", "").strip()
+            or Settings.portfolio_weighting
+        ),
+        top_k=_int_env("QUANT_TOP_K", Settings.top_k),
+        commission_rate=_float_env("QUANT_COMMISSION_RATE", Settings.commission_rate),
+        rebalance_freq=(
+            os.environ.get("QUANT_REBALANCE_FREQ", "").strip()
+            or Settings.rebalance_freq
+        ),
+        max_position_weight=_float_env(
+            "QUANT_MAX_POSITION_WEIGHT", Settings.max_position_weight
+        ),
+        max_rebalance_turnover=_float_env(
+            "QUANT_MAX_REBALANCE_TURNOVER", Settings.max_rebalance_turnover
+        ),
+        max_industry_weight=_float_env(
+            "QUANT_MAX_INDUSTRY_WEIGHT", Settings.max_industry_weight
+        ),
+        target_volatility=_float_env(
+            "QUANT_TARGET_VOLATILITY", Settings.target_volatility
+        ),
+        min_positions=_int_env("QUANT_MIN_POSITIONS", Settings.min_positions),
+        min_positions_exposure=_float_env(
+            "QUANT_MIN_POSITIONS_EXPOSURE", Settings.min_positions_exposure
+        ),
     )
 
 

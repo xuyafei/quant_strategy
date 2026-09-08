@@ -44,13 +44,31 @@ def price_coverage(prices: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def factor_coverage(panel: pd.DataFrame) -> pd.DataFrame:
-    """统计每个因子的非空覆盖率。"""
+def _aligned_eligible_mask(
+    panel: pd.DataFrame,
+    eligible_mask: pd.Series | None,
+) -> pd.Series:
+    if eligible_mask is None:
+        return pd.Series(True, index=panel.index, dtype=bool)
+    mask = eligible_mask.copy()
+    if not isinstance(mask.index, pd.MultiIndex) or mask.index.nlevels != 2:
+        raise TypeError("eligible_mask 须为 MultiIndex(date, symbol) 的 Series")
+    mask.index = mask.index.set_names(["date", "symbol"])
+    return mask.reindex(panel.index).fillna(False).astype(bool)
+
+
+def factor_coverage(
+    panel: pd.DataFrame,
+    *,
+    eligible_mask: pd.Series | None = None,
+) -> pd.DataFrame:
+    """统计每个因子在当时有效股票池内的非空覆盖率。"""
     p = _ensure_panel(panel)
-    total = int(len(p))
+    eligible = _aligned_eligible_mask(p, eligible_mask)
+    total = int(eligible.sum())
     rows: list[dict[str, Any]] = []
     for factor in p.columns:
-        s = p[factor]
+        s = p.loc[eligible, factor]
         valid = int(s.notna().sum())
         rows.append(
             {
@@ -66,13 +84,18 @@ def factor_coverage(panel: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def factor_daily_coverage(panel: pd.DataFrame) -> pd.DataFrame:
-    """统计每天每个因子的有效股票数与覆盖率。"""
+def factor_daily_coverage(
+    panel: pd.DataFrame,
+    *,
+    eligible_mask: pd.Series | None = None,
+) -> pd.DataFrame:
+    """统计每天在当时有效股票池内的因子覆盖率。"""
     p = _ensure_panel(panel)
-    symbols_total = p.groupby(level="date").size().rename("total_rows")
+    eligible = _aligned_eligible_mask(p, eligible_mask)
+    symbols_total = eligible.groupby(level="date").sum().astype(int).rename("total_rows")
     frames: list[pd.DataFrame] = []
     for factor in p.columns:
-        valid = p[factor].notna().groupby(level="date").sum().rename("valid_symbols")
+        valid = (p[factor].notna() & eligible).groupby(level="date").sum().rename("valid_symbols")
         df = pd.concat([symbols_total, valid], axis=1).reset_index()
         df["factor"] = str(factor)
         df["coverage"] = df["valid_symbols"] / df["total_rows"].replace(0, pd.NA)

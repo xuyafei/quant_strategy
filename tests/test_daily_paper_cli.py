@@ -47,6 +47,20 @@ class TestDailyPaperCli(unittest.TestCase):
             self.assertEqual(price_date.strftime("%Y-%m-%d"), "2024-01-31")
             self.assertAlmostEqual(float(latest_prices["AAA"]), 10.0)
 
+    def test_load_latest_target_keeps_turnover_retained_positions(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            rebalance = Path(td) / "rebalance.csv"
+            pd.DataFrame(
+                [
+                    {"date": "2024-02-29", "symbol": "NEW", "weight": 0.6, "selected": True},
+                    {"date": "2024-02-29", "symbol": "OLD", "weight": 0.4, "selected": False},
+                ]
+            ).to_csv(rebalance, index=False)
+
+            _, weights = load_latest_target_weights(rebalance, trade_date="2024-02-29")
+
+            self.assertEqual(weights.to_dict(), {"NEW": 0.6, "OLD": 0.4})
+
     def test_run_from_outputs_writes_daily_account_state(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             settings = replace(

@@ -263,6 +263,9 @@ def build_ml_score_factor(
         if model_obj is None or medians is None:
             continue
         pred_frame = dataset.loc[_date_mask(dataset, pd.Index([dt])), features]
+        # 时点股票池掩码会让非成员的全部基础特征均为 NaN。此类行不能用
+        # 训练期中位数“造出”预测，否则 ML_SCORE 会重新把非成分股带回候选池。
+        pred_frame = pred_frame.loc[pred_frame.notna().any(axis=1)]
         if pred_frame.empty:
             continue
         x_pred, _ = _prepare_matrix(pred_frame, features, medians=medians)

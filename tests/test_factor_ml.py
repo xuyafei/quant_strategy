@@ -63,6 +63,23 @@ class MLScoreFactorTests(unittest.TestCase):
             self.assertGreaterEqual(int(rec["n_train_days"]), settings.ml_score_min_train_days)
             self.assertEqual(int(rec["n_features"]), 2)
 
+    def test_does_not_predict_rows_with_all_features_missing(self) -> None:
+        settings = replace(
+            get_settings(),
+            ml_score_forward_days=5,
+            ml_score_train_lookback_days=40,
+            ml_score_min_train_days=10,
+            ml_score_min_train_rows=20,
+            ml_score_refit_every_days=10,
+        )
+        masked = self.panel.copy()
+        inactive_index = (self.dates[-1], "CCC")
+        masked.loc[inactive_index, :] = np.nan
+
+        score, _ = build_ml_score_factor(masked, self.prices, settings)
+
+        self.assertTrue(pd.isna(score.loc[inactive_index]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -69,9 +69,8 @@ def _load_target_weights(path: Path, *, trade_date: Any) -> tuple[pd.Timestamp, 
         out = out[out["date"] == latest_date].copy()
     else:
         latest_date = pd.Timestamp(trade_date)
-    if "selected" in out.columns:
-        selected = out["selected"].astype(str).str.strip().str.lower().isin({"1", "true", "yes", "y"})
-        out = out[selected].copy()
+    # `selected` 是信号层标志，不是最终目标持仓标志。换手节流保留的旧仓位会是
+    # selected=False 但 weight>0，风险限额必须把这些仓位计算在内。
     out = out.rename(columns={symbol_col: "symbol", weight_col: "weight"})
     out["weight"] = pd.to_numeric(out["weight"], errors="coerce").fillna(0.0)
     out = out[out["weight"] > 0.0]

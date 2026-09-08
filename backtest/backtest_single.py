@@ -123,6 +123,7 @@ def _rebalance_to_target_weights(
     picks: List[str],
     pick_weights: List[float],
     commission_rate: float,
+    valuation_px: pd.Series | None = None,
 ) -> Tuple[float, pd.Series]:
     """与等权调仓同一撮合逻辑；pick_weights 为目标股票仓位，和小于 1 时剩余保留现金。"""
     shares = shares.copy()
@@ -138,7 +139,7 @@ def _rebalance_to_target_weights(
     else:
         pw = [max(float(w), 0.0) for w in pick_weights]
     wmap = dict(zip(picks, pw))
-    nav0 = _portfolio_value(cash, shares, px)
+    nav0 = _portfolio_value(cash, shares, valuation_px if valuation_px is not None else px)
     tgt_dollar = {s: (nav0 * float(wmap[s]) if s in wmap else 0.0) for s in shares.index}
 
     cur_dollar = pd.Series(0.0, index=shares.index)
@@ -549,6 +550,7 @@ def _apply_industry_weight_cap(
     target: Dict[str, float],
     industry_by_symbol: dict[str, str],
     max_industry_weight: float,
+    max_position_weight: float = 0.0,
 ) -> tuple[Dict[str, float], bool, dict[str, float]]:
     if not target:
         return {}, False, {}
@@ -556,50 +558,59 @@ def _apply_industry_weight_cap(
     total = float(sum(clean.values()))
     if total <= 1e-12:
         return {}, False, {}
-    weights = {k: v / total for k, v in clean.items()}
+    target_total = min(total, 1.0)
+    weights = {k: v / total * target_total for k, v in clean.items()}
     cap = float(max_industry_weight)
     if not np.isfinite(cap) or cap <= 0.0 or cap >= 1.0:
         exposure = _industry_exposure(weights, industry_by_symbol)
         return weights, False, exposure
 
     industries = {industry_by_symbol.get(sym, "UNKNOWN") for sym in weights}
-    if cap * len(industries) < 1.0 - 1e-12:
-        exposure = _industry_exposure(weights, industry_by_symbol)
-        return weights, False, exposure
+    position_cap = float(max_position_weight)
+    if not np.isfinite(position_cap) or position_cap <= 0.0 or position_cap >= 1.0:
+        position_cap = 1.0
 
-    capped = dict(weights)
-    changed = False
-    for _ in range(len(industries) + len(weights) + 2):
-        exposure = _industry_exposure(capped, industry_by_symbol)
-        over = {ind: w for ind, w in exposure.items() if w > cap + 1e-12}
-        if not over:
-            break
-        changed = True
-        for ind, exp in over.items():
-            scale = cap / exp if exp > 1e-12 else 1.0
-            for sym in list(capped):
-                if industry_by_symbol.get(sym, "UNKNOWN") == ind:
-                    capped[sym] *= scale
+    # 先裁行业和单票，再只向同时具有“行业余量 + 单票余量”的标的回填。
+    # 若约束组合不可行，剩余部分保留现金，绝不通过最终归一化重新突破上限。
+    capped = {sym: min(weight, position_cap) for sym, weight in weights.items()}
+    exposure = _industry_exposure(capped, industry_by_symbol)
+    for ind, exp in exposure.items():
+        if exp <= cap + 1e-12:
+            continue
+        scale = cap / exp
+        for sym in capped:
+            if industry_by_symbol.get(sym, "UNKNOWN") == ind:
+                capped[sym] *= scale
 
-        exposure = _industry_exposure(capped, industry_by_symbol)
-        gap = 1.0 - float(sum(capped.values()))
-        if gap <= 1e-12:
-            break
-        room_by_ind = {ind: max(cap - exposure.get(ind, 0.0), 0.0) for ind in industries}
-        eligible = {
-            sym: room_by_ind.get(industry_by_symbol.get(sym, "UNKNOWN"), 0.0)
-            for sym in capped
-            if room_by_ind.get(industry_by_symbol.get(sym, "UNKNOWN"), 0.0) > 1e-12
-        }
-        room_total = float(sum(eligible.values()))
-        if room_total <= 1e-12:
-            break
-        for sym, room in eligible.items():
-            capped[sym] += gap * room / room_total
+    exposure = _industry_exposure(capped, industry_by_symbol)
+    gap = max(target_total - float(sum(capped.values())), 0.0)
+    room_by_symbol = {sym: max(position_cap - weight, 0.0) for sym, weight in capped.items()}
+    symbols_by_industry: dict[str, list[str]] = {ind: [] for ind in industries}
+    for sym in capped:
+        symbols_by_industry[industry_by_symbol.get(sym, "UNKNOWN")].append(sym)
 
-    s = float(sum(capped.values()))
-    if s > 1e-12:
-        capped = {k: v / s for k, v in capped.items() if v > 1e-12}
+    room_by_industry: dict[str, float] = {}
+    for ind, symbols_in_industry in symbols_by_industry.items():
+        industry_room = max(cap - exposure.get(ind, 0.0), 0.0)
+        position_room = float(sum(room_by_symbol[sym] for sym in symbols_in_industry))
+        room_by_industry[ind] = min(industry_room, position_room)
+
+    total_room = float(sum(room_by_industry.values()))
+    distributable = min(gap, total_room)
+    if distributable > 1e-12 and total_room > 1e-12:
+        for ind, industry_room in room_by_industry.items():
+            if industry_room <= 1e-12:
+                continue
+            industry_add = distributable * industry_room / total_room
+            symbols_in_industry = symbols_by_industry[ind]
+            symbol_room_total = float(sum(room_by_symbol[sym] for sym in symbols_in_industry))
+            if symbol_room_total <= 1e-12:
+                continue
+            for sym in symbols_in_industry:
+                capped[sym] += industry_add * room_by_symbol[sym] / symbol_room_total
+
+    capped = {k: v for k, v in capped.items() if v > 1e-12}
+    changed = any(abs(capped.get(sym, 0.0) - weight) > 1e-12 for sym, weight in weights.items())
     exposure = _industry_exposure(capped, industry_by_symbol)
     return capped, changed, exposure
 
@@ -1060,6 +1071,9 @@ def run_single_backtest(
         close_col=settings.price_col,
     )
     prices_wide = prices_wide.sort_index().sort_index(axis=1)
+    # 停牌或临时缺报价不能让持仓市值凭空归零；估值使用最近可得价格，交易仍使用
+    # 当日原始价格，因此缺报价标的不会在陈旧价格上被买卖。
+    valuation_prices_wide = prices_wide.ffill()
     liquidity_data = kwargs.get("liquidity_data")
     if liquidity_data is None:
         liquidity_data = kwargs.get("long_prices")
@@ -1148,7 +1162,8 @@ def run_single_backtest(
 
     for dt in prices_wide.index:
         px = prices_wide.loc[dt]
-        nav = _portfolio_value(cash, shares, px)
+        valuation_px = valuation_prices_wide.loc[dt]
+        nav = _portfolio_value(cash, shares, valuation_px)
         nav_records.append((dt, nav))
 
         if dt not in rebalance_dates:
@@ -1249,6 +1264,7 @@ def run_single_backtest(
             raw_target_map,
             industry_by_symbol,
             float(getattr(settings, "max_industry_weight", 0.0) or 0.0),
+            float(getattr(settings, "max_position_weight", 0.0) or 0.0),
         )
         volatility_target_map, volatility_target_meta = _apply_volatility_target(
             industry_target_map,
@@ -1332,7 +1348,13 @@ def run_single_backtest(
             continue
 
         cash, shares = _rebalance_to_target_weights(
-            cash, shares, px, target_picks, target_weights, settings.commission_rate
+            cash,
+            shares,
+            px,
+            target_picks,
+            target_weights,
+            settings.commission_rate,
+            valuation_px=valuation_px,
         )
 
         rebalance_log.append(

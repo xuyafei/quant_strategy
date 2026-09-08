@@ -124,6 +124,7 @@ def factor_long_excess_summary(
     rebalance_freq: str = "ME",
     price_col: str = "close",
     periods: int = 252,
+    benchmark_prices: pd.DataFrame | None = None,
 ) -> tuple[pd.Series, dict[str, Any]]:
     """返回单个因子的多头净值与相对股票池等权基准的摘要指标。"""
     nav, log = factor_long_only_nav(
@@ -135,7 +136,8 @@ def factor_long_excess_summary(
         name=factor_name,
     )
     stats = summarize(nav, periods=periods)
-    benchmark = equal_weight_benchmark_nav(prices, dates=nav.index, price_col=price_col)
+    benchmark_source = benchmark_prices if benchmark_prices is not None else prices
+    benchmark = equal_weight_benchmark_nav(benchmark_source, dates=nav.index, price_col=price_col)
     excess_stats = summarize_excess(nav, benchmark, periods=periods) if not benchmark.empty else {}
     stats.update(excess_stats)
     stats["factor"] = factor_name
@@ -157,6 +159,7 @@ def batch_factor_long_excess(
     rebalance_freq: str = "ME",
     price_col: str = "close",
     periods: int = 252,
+    benchmark_prices: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, dict[str, pd.Series]]:
     """批量计算多列因子的 Top-K 多头超额摘要。"""
     cols = list(factors) if factors is not None else list(panel.columns)
@@ -176,6 +179,7 @@ def batch_factor_long_excess(
             rebalance_freq=rebalance_freq,
             price_col=price_col,
             periods=periods,
+            benchmark_prices=benchmark_prices,
         )
         if not nav.empty:
             navs[str(col)] = nav

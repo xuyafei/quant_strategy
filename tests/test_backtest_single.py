@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from backtest.backtest_single import (
+    _apply_industry_weight_cap,
     _apply_max_position_cap,
     _apply_rebalance_turnover_cap,
     _rebalance_dates,
@@ -39,6 +40,32 @@ class TestWeightsForRebalance(unittest.TestCase):
         self.assertFalse(capped)
         self.assertAlmostEqual(sum(w), 1.0)
         self.assertEqual(w, [0.5, 0.5])
+
+    def test_industry_cap_does_not_reinflate_single_position(self) -> None:
+        target = {
+            "BANK_A": 0.2,
+            "BANK_B": 0.2,
+            "TECH": 0.2,
+            "ENERGY": 0.2,
+            "HEALTH": 0.2,
+        }
+        industries = {
+            "BANK_A": "Bank",
+            "BANK_B": "Bank",
+            "TECH": "Tech",
+            "ENERGY": "Energy",
+            "HEALTH": "Health",
+        }
+        weights, changed, exposure = _apply_industry_weight_cap(
+            target,
+            industries,
+            max_industry_weight=0.35,
+            max_position_weight=0.20,
+        )
+        self.assertTrue(changed)
+        self.assertLessEqual(max(weights.values()), 0.20 + 1e-12)
+        self.assertLessEqual(exposure["Bank"], 0.35 + 1e-12)
+        self.assertAlmostEqual(sum(weights.values()), 0.95)
 
     def test_apply_rebalance_turnover_cap(self) -> None:
         prev = {"AAA": 0.5, "BBB": 0.5}
@@ -88,6 +115,37 @@ class TestWeightsForRebalance(unittest.TestCase):
         )
         self.assertEqual(picks, ["NEW", "OLD"])
         self.assertEqual(weights, [0.75, 0.25])
+
+    def test_missing_quote_uses_last_price_for_valuation(self) -> None:
+        days = pd.to_datetime(["2024-01-31", "2024-02-01", "2024-02-02"])
+        prices = pd.DataFrame(
+            {"AAA": [10.0, np.nan, 11.0], "BBB": [10.0, 10.0, 10.0]},
+            index=days,
+        )
+        idx = pd.MultiIndex.from_product([days, ["AAA", "BBB"]], names=["date", "symbol"])
+        factor = pd.Series(0.0, index=idx)
+        factor.loc[(slice(None), "AAA")] = 2.0
+        settings = replace(
+            get_settings(),
+            portfolio_weighting="equal",
+            top_k=1,
+            commission_rate=0.0,
+            max_position_weight=1.0,
+            max_industry_weight=0.0,
+            target_volatility=0.0,
+            min_positions=0,
+            max_rebalance_turnover=0.0,
+        )
+
+        nav, _ = run_single_backtest(
+            "TEST_STALE_VALUATION",
+            factor_values=factor,
+            prices=prices,
+            settings=settings,
+        )
+
+        self.assertAlmostEqual(float(nav.loc[days[1]]), 1.0)
+        self.assertAlmostEqual(float(nav.loc[days[2]]), 1.1)
 
     def test_equal_mode(self) -> None:
         px = _price_wide_for_weights()

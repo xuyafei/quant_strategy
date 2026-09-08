@@ -34,6 +34,10 @@ SELECTION_COLUMNS = [
     "validation_positive_rate",
     "validation_excess_ann_return",
     "validation_top_minus_bottom_ann",
+    "multi_horizon_status",
+    "supportive_horizon_rate",
+    "rolling_oos_status",
+    "supportive_window_rate",
 ]
 
 
@@ -43,6 +47,12 @@ def _safe_float(value: Any, default: float = np.nan) -> float:
     except (TypeError, ValueError):
         return default
     return out if np.isfinite(out) else default
+
+
+def _safe_status(value: Any) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip().upper()
 
 
 def _frame_with_factor(frame: pd.DataFrame | None) -> pd.DataFrame:
@@ -59,6 +69,8 @@ def build_factor_selection_table(
     factor_coverage: pd.DataFrame | None = None,
     factor_weight_summary: pd.DataFrame | None = None,
     factor_decay_monitor: pd.DataFrame | None = None,
+    multi_horizon_summary: pd.DataFrame | None = None,
+    rolling_out_of_sample_summary: pd.DataFrame | None = None,
     min_coverage: float = 0.5,
     min_valid_dates: int = 60,
     min_factor_score: float = 0.15,
@@ -87,6 +99,12 @@ def build_factor_selection_table(
             "severity": "monitor_severity",
         }
     )
+    multi = _frame_with_factor(multi_horizon_summary).rename(
+        columns={"status": "multi_horizon_status"}
+    )
+    rolling = _frame_with_factor(rolling_out_of_sample_summary).rename(
+        columns={"status": "rolling_oos_status"}
+    )
 
     keep_cov = ["factor", "coverage", "valid_dates", "valid_symbols"]
     keep_weight = [
@@ -108,6 +126,8 @@ def build_factor_selection_table(
         "validation_excess_ann_return",
         "validation_top_minus_bottom_ann",
     ]
+    keep_multi = ["factor", "multi_horizon_status", "supportive_horizon_rate"]
+    keep_rolling = ["factor", "rolling_oos_status", "supportive_window_rate"]
     for col in keep_cov:
         if col not in cov.columns:
             cov[col] = np.nan
@@ -117,11 +137,19 @@ def build_factor_selection_table(
     for col in keep_monitor:
         if col not in monitor.columns:
             monitor[col] = np.nan
+    for col in keep_multi:
+        if col not in multi.columns:
+            multi[col] = np.nan
+    for col in keep_rolling:
+        if col not in rolling.columns:
+            rolling[col] = np.nan
 
     out = (
         base.merge(cov[keep_cov], on="factor", how="left")
         .merge(weight[keep_weight], on="factor", how="left")
         .merge(monitor[keep_monitor], on="factor", how="left")
+        .merge(multi[keep_multi], on="factor", how="left")
+        .merge(rolling[keep_rolling], on="factor", how="left")
     )
 
     rows: list[dict[str, Any]] = []
@@ -134,7 +162,10 @@ def build_factor_selection_table(
         pos_rate = _safe_float(rec.get("positive_rate"))
         top_bottom = _safe_float(rec.get("top_minus_bottom_ann"))
         mono = _safe_float(rec.get("monotonicity_score"))
-        monitor_status = str(rec.get("monitor_status") or "").upper()
+        monitor_status = _safe_status(rec.get("monitor_status"))
+        multi_status = _safe_status(rec.get("multi_horizon_status"))
+        rolling_status = _safe_status(rec.get("rolling_oos_status"))
+        enhanced_validation = bool(multi_status or rolling_status)
 
         hard_reject = False
         if np.isfinite(coverage) and coverage < min_coverage:
@@ -143,8 +174,15 @@ def build_factor_selection_table(
         if valid_dates < min_valid_dates:
             reasons.append("valid_dates_below_threshold")
             hard_reject = True
+        if not np.isfinite(mean_ic):
+            reasons.append("ic_unavailable")
+            hard_reject = True
         if monitor_status in {"FAILED", "DEGRADED"}:
-            reasons.append("sample_out_of_sample_%s" % monitor_status.lower())
+            reasons.append("fixed_split_%s" % monitor_status.lower())
+            if not enhanced_validation:
+                hard_reject = True
+        if multi_status == "FAILED":
+            reasons.append("multi_horizon_failed")
             hard_reject = True
 
         pass_checks: list[bool] = []
@@ -173,6 +211,16 @@ def build_factor_selection_table(
             pass_checks.append(ok)
             if not ok:
                 reasons.append("monotonicity_below_threshold")
+        if multi_status:
+            ok = multi_status in {"ROBUST", "SUPPORTIVE"}
+            pass_checks.append(ok)
+            if not ok:
+                reasons.append("multi_horizon_not_supportive")
+        if rolling_status:
+            ok = rolling_status in {"ROBUST", "WATCH"}
+            pass_checks.append(ok)
+            if not ok:
+                reasons.append("rolling_oos_unstable")
 
         if hard_reject:
             decision = "REJECT"

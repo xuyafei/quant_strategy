@@ -110,6 +110,78 @@ class FactorSelectionTests(unittest.TestCase):
         table["decision"] = ["REJECT", "REJECT"]
         self.assertEqual(selected_factors_for_fusion(table, ["GOOD", "WEAK"]), ["GOOD", "WEAK"])
 
+    def test_constant_factor_without_valid_ic_is_rejected(self):
+        table = build_factor_selection_table(
+            factors=["NO_SIGNAL"],
+            factor_coverage=pd.DataFrame(
+                [{"factor": "NO_SIGNAL", "coverage": 1.0, "valid_dates": 120, "valid_symbols": 50}]
+            ),
+            factor_weight_summary=pd.DataFrame(
+                [
+                    {
+                        "factor": "NO_SIGNAL",
+                        "factor_score": 0.8,
+                        "fusion_weight": 1.0,
+                        "mean_ic": float("nan"),
+                        "ic_ir": float("nan"),
+                        "positive_rate": float("nan"),
+                        "top_minus_bottom_ann": 0.1,
+                        "monotonicity_score": 0.8,
+                    }
+                ]
+            ),
+            factor_decay_monitor=pd.DataFrame(
+                [{"factor": "NO_SIGNAL", "status": "WATCH", "severity": 1}]
+            ),
+        )
+
+        self.assertEqual(table.loc[0, "decision"], "REJECT")
+        self.assertIn("ic_unavailable", table.loc[0, "reasons"])
+
+    def test_enhanced_validation_can_override_one_day_fixed_split_failure(self):
+        table = build_factor_selection_table(
+            factors=["SLOW_FACTOR"],
+            factor_coverage=pd.DataFrame(
+                [{"factor": "SLOW_FACTOR", "coverage": 0.8, "valid_dates": 120}]
+            ),
+            factor_weight_summary=pd.DataFrame(
+                [
+                    {
+                        "factor": "SLOW_FACTOR",
+                        "factor_score": 0.4,
+                        "mean_ic": 0.01,
+                        "positive_rate": 0.55,
+                        "top_minus_bottom_ann": 0.05,
+                        "monotonicity_score": 0.6,
+                    }
+                ]
+            ),
+            factor_decay_monitor=pd.DataFrame(
+                [{"factor": "SLOW_FACTOR", "status": "DEGRADED"}]
+            ),
+            multi_horizon_summary=pd.DataFrame(
+                [
+                    {
+                        "factor": "SLOW_FACTOR",
+                        "status": "ROBUST",
+                        "supportive_horizon_rate": 0.75,
+                    }
+                ]
+            ),
+            rolling_out_of_sample_summary=pd.DataFrame(
+                [
+                    {
+                        "factor": "SLOW_FACTOR",
+                        "status": "WATCH",
+                        "supportive_window_rate": 0.5,
+                    }
+                ]
+            ),
+        )
+
+        self.assertEqual(table.loc[0, "decision"], "PASS")
+        self.assertIn("fixed_split_degraded", table.loc[0, "reasons"])
+
 
 if __name__ == "__main__":
     unittest.main()

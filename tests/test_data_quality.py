@@ -42,6 +42,18 @@ class TestDataQuality(unittest.TestCase):
         first_value = daily[(daily["date"] == days[0]) & (daily["factor"] == "VALUE")]
         self.assertEqual(int(first_value["valid_symbols"].iloc[0]), 0)
 
+        eligible = pd.Series([True, False, True, True, True, False], index=idx)
+        active_fc = factor_coverage(panel, eligible_mask=eligible)
+        self.assertAlmostEqual(
+            float(active_fc.loc[active_fc["factor"] == "MOMENTUM", "coverage"].iloc[0]),
+            3 / 4,
+        )
+        active_daily = factor_daily_coverage(panel, eligible_mask=eligible)
+        first_active = active_daily[
+            (active_daily["date"] == days[0]) & (active_daily["factor"] == "MOMENTUM")
+        ]
+        self.assertEqual(int(first_active["total_rows"].iloc[0]), 1)
+
     def test_rebalance_coverage(self) -> None:
         days = pd.bdate_range("2024-01-01", periods=2)
         prices = pd.DataFrame({"AAA": [1.0, 2.0], "BBB": [1.0, None]}, index=days)

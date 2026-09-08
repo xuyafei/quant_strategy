@@ -6,6 +6,7 @@ from analysis.factor_diagnostics import (
     batch_factor_group_returns,
     batch_factor_long_excess,
     factor_group_return_detail,
+    factor_long_excess_summary,
     factor_long_only_nav,
 )
 
@@ -53,6 +54,27 @@ class FactorDiagnosticsTests(unittest.TestCase):
         self.assertIn("excess_ann_return", summary.columns)
         self.assertIn("information_ratio", summary.columns)
         self.assertIn("QUALITY", navs)
+
+    def test_long_excess_uses_explicit_benchmark_universe(self):
+        _, default_stats = factor_long_excess_summary(
+            self.factor,
+            self.prices,
+            factor_name="QUALITY",
+            top_k=1,
+            rebalance_freq="D",
+        )
+        _, matched_stats = factor_long_excess_summary(
+            self.factor,
+            self.prices,
+            factor_name="QUALITY",
+            top_k=1,
+            rebalance_freq="D",
+            benchmark_prices=self.prices[["AAA"]],
+        )
+        self.assertGreater(
+            float(default_stats["excess_ann_return"]),
+            float(matched_stats["excess_ann_return"]),
+        )
 
     def test_factor_group_returns_show_top_group_outperforming(self):
         detail = factor_group_return_detail(
