@@ -1,0 +1,83 @@
+{
+  "protocol_id": "CSI300_WEEKLY_STATE_GATE_V1",
+  "frozen_at": "2026-09-09T15:14:14+08:00",
+  "research_status": "PRE_REGISTERED_NOT_LIVE_APPROVED",
+  "information_cutoff": "strictly_before_rebalance_date",
+  "data_plan": {
+    "fetch_start": "2023-01-01",
+    "fetch_end": "2026-09-04",
+    "walk_forward_min_history_days": 260,
+    "known_development_period": ["2025-09-12", "2026-09-04"],
+    "historical_robustness_period": ["FIRST_ELIGIBLE_DATE", "2025-09-11"],
+    "diagnostic_stress_period": ["2026-07-01", "2026-07-31"],
+    "true_forward_holdout_start": "2026-09-07"
+  },
+  "primary_candidate": {
+    "universe": "CSI300_POINT_IN_TIME",
+    "rebalance_freq": "W-FRI",
+    "top_k": 10,
+    "aggregate_tech_cap": 0.0,
+    "selection": "existing_strict_walk_forward_factor_gate",
+    "portfolio_weighting": "existing_max_sharpe_with_current_risk_constraints"
+  },
+  "fixed_controls": [
+    "CSI300_POINT_IN_TIME_TOP5",
+    "CSI300_POINT_IN_TIME_EQUAL_WEIGHT",
+    "A50_POINT_IN_TIME_TOP5_ON_OVERLAPPING_PERIOD"
+  ],
+  "forbidden_search": [
+    "additional_top_k_values",
+    "additional_factor_sets",
+    "additional_optimizers",
+    "threshold_changes_after_viewing_extended_history",
+    "rules_designed_only_to_avoid_2026_07"
+  ],
+  "technology_growth_industries": [
+    "半导体",
+    "通信设备",
+    "元器件",
+    "电气设备",
+    "计算机设备",
+    "软件服务",
+    "互联网"
+  ],
+  "state_inputs": {
+    "relative_trend_weak": "TECH_EW_RETURN_20D_MINUS_CSI300_EW_RETURN_20D_LT_0_AND_TECH_EW_RETURN_60D_MINUS_CSI300_EW_RETURN_60D_LT_0",
+    "breadth_weak": "TECH_SHARE_ABOVE_60D_MOVING_AVERAGE_LT_0.40",
+    "volatility_shock": "TECH_EW_VOLATILITY_20D_DIV_120D_GT_1.25",
+    "observation_lag": "all_inputs_end_strictly_before_rebalance_date"
+  },
+  "raw_state": {
+    "GREEN": "zero_or_one_bad_inputs",
+    "YELLOW": "two_bad_inputs",
+    "RED": "three_bad_inputs"
+  },
+  "hysteresis": {
+    "GREEN_TO_YELLOW": "two_consecutive_raw_yellow_observations",
+    "ANY_TO_RED": "one_raw_red_observation",
+    "YELLOW_TO_GREEN": "two_consecutive_raw_green_observations",
+    "RED_TO_YELLOW": "two_consecutive_non_red_observations",
+    "RED_TO_GREEN": "must_transition_through_yellow"
+  },
+  "state_actions": {
+    "GREEN": {"gross_exposure_multiplier": 1.0, "max_tech_growth_weight": 0.0},
+    "YELLOW": {"gross_exposure_multiplier": 0.75, "max_tech_growth_weight": 0.4},
+    "RED": {"gross_exposure_multiplier": 0.5, "max_tech_growth_weight": 0.25}
+  },
+  "acceptance_criteria": {
+    "historical_robustness_max_drawdown_improvement": "at_least_20_percent_relative_reduction_in_drawdown_magnitude",
+    "historical_robustness_return_tolerance": "state_strategy_total_return_not_more_than_5_percentage_points_below_baseline",
+    "turnover_limit": "state_strategy_total_turnover_not_more_than_120_percent_of_baseline",
+    "full_active_excess_return": "positive",
+    "full_active_information_ratio": "positive",
+    "stress_case_2026_07": "loss_reduction_at_least_30_percent_secondary_diagnostic_only",
+    "anti_single_episode_rule": "risk_reduction_must_help_at_least_two_distinct_adverse_episodes"
+  },
+  "forward_validation": {
+    "status": "RESERVED_NOT_YET_OBSERVED",
+    "engineering_minimum_trading_days": 20,
+    "research_minimum_trading_days": 60,
+    "no_parameter_changes_after_freeze": true,
+    "real_orders_authorized": false
+  }
+}

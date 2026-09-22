@@ -1,0 +1,58 @@
+{
+  "protocol_id": "CSI300_HISTORY_WINDOW_STABILITY_V1",
+  "frozen_at": "2026-09-10T14:55:10+08:00",
+  "research_status": "PRE_REGISTERED_DIAGNOSTIC_NOT_LIVE_APPROVED",
+  "objective": "Measure sensitivity to the amount of historical data available to the existing factor gate; do not select the best-performing window.",
+  "information_cutoff": "strictly_before_rebalance_date",
+  "data": {
+    "universe": "CSI300_POINT_IN_TIME",
+    "data_start": "2023-01-01",
+    "data_end": "2026-09-04",
+    "common_active_start": "FIRST_DATE_ACTIVE_IN_ALL_VARIANTS",
+    "known_development_period": ["2025-09-12", "2026-09-04"],
+    "true_forward_data_used": false
+  },
+  "fixed_strategy": {
+    "rebalance_freq": "W-FRI",
+    "top_k": 10,
+    "selection": "existing_strict_walk_forward_factor_gate",
+    "validation_horizons": ["1D", "5D", "20D", "NEXT_REBALANCE"],
+    "portfolio_weighting": "existing_max_sharpe_with_current_risk_constraints",
+    "state_gate": "DISABLED",
+    "commission_rate": 0.0003
+  },
+  "history_variants": [
+    {"id": "ROLLING_260D", "max_history_trading_days": 260},
+    {"id": "ROLLING_504D", "max_history_trading_days": 504},
+    {"id": "EXPANDING", "max_history_trading_days": 0}
+  ],
+  "why_no_756d_variant": "The current 2023 start cannot provide an independent 756-day window over the full common active period; fetching 2022 data would be a separate dataset version.",
+  "stability_metrics": {
+    "factor_decision": "pairwise weekly Jaccard of PASS factor sets",
+    "signal_selection": "pairwise weekly Jaccard of newly selected Top10 symbols before turnover carryover",
+    "style_weight": "pairwise weekly L1 distance of style weight vectors",
+    "performance": "total return, annualized excess, information ratio, volatility, maximum drawdown",
+    "execution": "actual target turnover, nominal holdings, holdings above 10bp and 50bp, effective position count"
+  },
+  "acceptance_criteria": {
+    "factor_pass_set_median_jaccard_each_pair": ">=0.50",
+    "signal_top10_median_jaccard_each_pair": ">=0.40",
+    "style_weight_median_l1_each_pair": "<=0.50",
+    "full_active_total_return_range": "<=15_percentage_points",
+    "full_active_max_drawdown_range": "<=5_percentage_points",
+    "full_active_excess_return": "positive_for_all_variants",
+    "known_development_total_return_range": "<=20_percentage_points"
+  },
+  "interpretation": {
+    "all_required_pass": "WINDOW_STABLE_CANDIDATE_ONLY",
+    "any_required_fail": "WINDOW_SENSITIVE_RESEARCH_REQUIRED",
+    "live_approval_possible": false
+  },
+  "forbidden_actions": [
+    "choose_the_highest_return_window",
+    "change_thresholds_after_viewing_results",
+    "change_factor_set_or_optimizer_between_variants",
+    "combine_the_best_subperiod_from_each_variant",
+    "treat_this_known_history_as_true_forward_validation"
+  ]
+}

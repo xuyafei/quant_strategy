@@ -11,6 +11,8 @@ data/*.xls
 data/*.db
 data/*.sqlite
 data/*.sqlite3
+data/csi300_pit_*/
+data/all_a_dynamic_*/
 
 # 原创内容稿：本地保留，不进入公开仓库
 docs/articles/

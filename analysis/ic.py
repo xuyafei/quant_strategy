@@ -55,17 +55,26 @@ def daily_ic_spearman(
     fac.index = fac.index.set_names(["date", "symbol"])
     fwd = forward_returns_long(prices_wide, forward_days=forward_days)
     df = pd.concat([fac.rename("f"), fwd.rename("r")], axis=1, join="inner")
-    out: dict[Any, float] = {}
-    for dt, g in df.groupby(level=0, sort=True):
-        gg = g[["f", "r"]].dropna(how="any")
-        if len(gg) < min_names:
-            out[dt] = np.nan
-            continue
-        out[dt] = float(gg["f"].corr(gg["r"], method="spearman"))
-    ser = pd.Series(out, name="ic")
-    ser.index = pd.to_datetime(ser.index)
-    ser = ser.sort_index()
-    return ser
+    all_dates = pd.DatetimeIndex(df.index.get_level_values(0).unique()).sort_values()
+    clean = df[["f", "r"]].dropna(how="any")
+    if clean.empty:
+        return pd.Series(np.nan, index=all_dates, name="ic", dtype=float)
+
+    # Spearman is Pearson correlation after within-date average ranking.  Doing the
+    # rank, centering and reduction in vectorized groupby operations avoids a
+    # Python/scipy call for every trading day while preserving tie semantics.
+    grouped = clean.groupby(level=0, sort=False)
+    ranked = grouped[["f", "r"]].rank(method="average")
+    centered = ranked - ranked.groupby(level=0, sort=False).transform("mean")
+    numerator = (centered["f"] * centered["r"]).groupby(level=0, sort=False).sum()
+    denominator = np.sqrt(
+        centered["f"].pow(2).groupby(level=0, sort=False).sum()
+        * centered["r"].pow(2).groupby(level=0, sort=False).sum()
+    )
+    correlation = numerator / denominator.replace(0.0, np.nan)
+    counts = grouped.size()
+    correlation = correlation.where(counts >= int(min_names))
+    return correlation.reindex(all_dates).astype(float).rename("ic")
 
 
 def summarize_ic(ic: pd.Series) -> Dict[str, Any]:

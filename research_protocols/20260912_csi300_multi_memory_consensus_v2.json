@@ -1,0 +1,89 @@
+{
+  "protocol_id": "CSI300_MULTI_MEMORY_CONSENSUS_V2",
+  "frozen_at": "2026-09-12T20:37:10+08:00",
+  "research_status": "PRE_REGISTERED_HISTORICAL_DIAGNOSTIC_NOT_LIVE_APPROVED",
+  "objective": "Replace single-history-window selection with a fixed rank-consensus signal and reduce risk when the three source models disagree; do not select the best source window.",
+  "information_cutoff": "each source signal was built strictly before its rebalance date",
+  "data": {
+    "universe": "CSI300_POINT_IN_TIME",
+    "data_start": "2023-01-01",
+    "data_end": "2026-09-04",
+    "historical_robustness_period": ["2024-01-26", "2025-09-11"],
+    "known_development_period": ["2025-09-12", "2026-09-04"],
+    "true_forward_data_used": false
+  },
+  "fixed_source_models": [
+    {"id": "ROLLING_260D", "max_history_trading_days": 260},
+    {"id": "ROLLING_504D", "max_history_trading_days": 504},
+    {"id": "EXPANDING", "max_history_trading_days": 0}
+  ],
+  "consensus_signal": {
+    "source_transform": "cross_sectional_percentile_rank_each_rebalance_date",
+    "higher_rank_is_better": true,
+    "primary_aggregation": "row_median_of_three_source_ranks",
+    "primary_minimum_valid_sources_per_symbol": 2,
+    "leave_one_out_aggregation": "row_median_of_two_source_ranks",
+    "leave_one_out_minimum_valid_sources_per_symbol": 2,
+    "top_k": 10
+  },
+  "model_disagreement_gate": {
+    "source_topk": 10,
+    "pairwise_metric": "jaccard",
+    "agreement_threshold": 0.40,
+    "GREEN": {
+      "condition": "all_three_pairwise_jaccards_at_or_above_threshold",
+      "gross_exposure_multiplier": 1.0
+    },
+    "YELLOW": {
+      "condition": "one_or_two_pairwise_jaccards_at_or_above_threshold",
+      "gross_exposure_multiplier": 0.75
+    },
+    "RED": {
+      "condition": "zero_pairwise_jaccards_at_or_above_threshold",
+      "gross_exposure_multiplier": 0.5
+    },
+    "hysteresis": "none_in_v2",
+    "same_gate_applied_to_primary_and_all_leave_one_out_variants": true
+  },
+  "fixed_portfolio": {
+    "rebalance_freq": "W-FRI",
+    "portfolio_weighting": "existing_max_sharpe_with_current_risk_constraints",
+    "state_market_gate": "disabled",
+    "commission_rate": 0.0003,
+    "empty_signal_policy": "cash",
+    "tail_position_rule_changes": "forbidden_in_this_experiment"
+  },
+  "stress_variants": [
+    {"id": "CONSENSUS_3WAY", "sources": ["ROLLING_260D", "ROLLING_504D", "EXPANDING"]},
+    {"id": "LEAVE_OUT_260D", "sources": ["ROLLING_504D", "EXPANDING"]},
+    {"id": "LEAVE_OUT_504D", "sources": ["ROLLING_260D", "EXPANDING"]},
+    {"id": "LEAVE_OUT_EXPANDING", "sources": ["ROLLING_260D", "ROLLING_504D"]}
+  ],
+  "acceptance_criteria": {
+    "primary_full_active_annualized_excess": ">0",
+    "primary_full_active_information_ratio": ">=0.25",
+    "primary_full_active_max_drawdown_magnitude": "<=14.50_percent",
+    "primary_full_active_total_return": ">=43.94_percent",
+    "primary_historical_robustness_return_gap_vs_benchmark": ">=-5_percentage_points",
+    "primary_positive_total_return_in_both_subperiods": true,
+    "leave_one_out_full_active_total_return_range": "<=15_percentage_points",
+    "leave_one_out_full_active_max_drawdown_range": "<=5_percentage_points",
+    "leave_one_out_full_active_annualized_excess": "positive_for_all_variants",
+    "primary_actual_target_turnover": "<=133.57_L1",
+    "all_signal_and_gate_dates_auditable": true
+  },
+  "interpretation": {
+    "all_required_pass": "HISTORICAL_STABILITY_CANDIDATE_ONLY",
+    "any_required_fail": "CONSENSUS_V2_NO_GO",
+    "live_approval_possible_from_this_historical_test": false
+  },
+  "forbidden_actions": [
+    "choose_the_best_source_window",
+    "change_the_0.40_agreement_threshold_after_viewing_results",
+    "change_the_100_75_50_risk_schedule_after_viewing_results",
+    "change_factor_candidates_topk_optimizer_or_transaction_costs",
+    "change_tail_position_rules_in_the_same_experiment",
+    "select_the_best_leave_one_out_variant",
+    "treat_known_history_as_true_forward_validation"
+  ]
+}

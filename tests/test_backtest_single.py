@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 
 from backtest.backtest_single import (
+    _apply_aggregate_exposure_cap,
+    _apply_gross_exposure_multiplier,
     _apply_industry_weight_cap,
     _apply_max_position_cap,
     _apply_rebalance_turnover_cap,
@@ -28,6 +30,15 @@ def _price_wide_for_weights() -> pd.DataFrame:
 
 
 class TestWeightsForRebalance(unittest.TestCase):
+    def test_gross_exposure_multiplier_leaves_cash(self) -> None:
+        weights, meta = _apply_gross_exposure_multiplier(
+            {"AAA": 0.6, "BBB": 0.4},
+            0.75,
+        )
+        self.assertAlmostEqual(sum(weights.values()), 0.75)
+        self.assertAlmostEqual(meta["cash_target_weight_after_gross"], 0.25)
+        self.assertTrue(meta["gross_exposure_scaled"])
+
     def test_apply_max_position_cap(self) -> None:
         w, capped = _apply_max_position_cap([0.8, 0.1, 0.1], 0.5)
         self.assertTrue(capped)
@@ -66,6 +77,46 @@ class TestWeightsForRebalance(unittest.TestCase):
         self.assertLessEqual(max(weights.values()), 0.20 + 1e-12)
         self.assertLessEqual(exposure["Bank"], 0.35 + 1e-12)
         self.assertAlmostEqual(sum(weights.values()), 0.95)
+
+    def test_aggregate_exposure_cap_redistributes_to_non_group(self) -> None:
+        target = {
+            "CHIP": 0.30,
+            "TELECOM": 0.25,
+            "BANK": 0.25,
+            "ENERGY": 0.20,
+        }
+        in_group = {"CHIP": True, "TELECOM": True, "BANK": False, "ENERGY": False}
+        industries = {
+            "CHIP": "Semiconductor",
+            "TELECOM": "Communication",
+            "BANK": "Bank",
+            "ENERGY": "Energy",
+        }
+        weights, changed, exposure = _apply_aggregate_exposure_cap(
+            target,
+            in_group,
+            0.25,
+            max_position_weight=0.40,
+            industry_by_symbol=industries,
+            max_industry_weight=0.40,
+        )
+        self.assertTrue(changed)
+        self.assertLessEqual(exposure, 0.25 + 1e-12)
+        self.assertAlmostEqual(sum(weights.values()), 1.0)
+        self.assertLessEqual(max(weights.values()), 0.40 + 1e-12)
+
+    def test_aggregate_exposure_cap_keeps_cash_when_redistribution_is_infeasible(self) -> None:
+        weights, changed, exposure = _apply_aggregate_exposure_cap(
+            {"CHIP": 0.60, "BANK": 0.40},
+            {"CHIP": True, "BANK": False},
+            0.25,
+            max_position_weight=0.40,
+            industry_by_symbol={"CHIP": "Tech", "BANK": "Bank"},
+            max_industry_weight=0.40,
+        )
+        self.assertTrue(changed)
+        self.assertAlmostEqual(exposure, 0.25)
+        self.assertAlmostEqual(sum(weights.values()), 0.65)
 
     def test_apply_rebalance_turnover_cap(self) -> None:
         prev = {"AAA": 0.5, "BBB": 0.5}
@@ -445,6 +496,49 @@ class TestVolatilityTarget(unittest.TestCase):
 
 
 class TestMinPositionsRule(unittest.TestCase):
+    def test_rebalance_override_scales_gross_exposure(self) -> None:
+        days = pd.bdate_range("2024-01-01", periods=45)
+        prices = pd.DataFrame(
+            {
+                "AAA": np.linspace(10.0, 11.0, len(days)),
+                "BBB": np.linspace(10.0, 10.5, len(days)),
+            },
+            index=days,
+        )
+        idx = pd.MultiIndex.from_product([days, ["AAA", "BBB"]], names=["date", "symbol"])
+        factor = pd.Series(1.0, index=idx)
+        first_rebalance = prices.groupby(pd.Grouper(freq="ME")).apply(lambda x: x.index[-1]).iloc[0]
+        overrides = pd.DataFrame(
+            {
+                "date": [first_rebalance],
+                "risk_state": ["RED"],
+                "gross_exposure_multiplier": [0.5],
+                "max_tech_growth_weight": [0.0],
+            }
+        )
+        settings = replace(
+            get_settings(),
+            portfolio_weighting="equal",
+            top_k=2,
+            commission_rate=0.0,
+            max_position_weight=1.0,
+            max_industry_weight=0.0,
+            target_volatility=0.0,
+            min_positions=0,
+            max_rebalance_turnover=0.0,
+        )
+        _, meta = run_single_backtest(
+            "TEST_DYNAMIC_GROSS",
+            factor_values=factor,
+            prices=prices,
+            settings=settings,
+            rebalance_overrides=overrides,
+        )
+        first = [rec for rec in meta["rebalance_log"] if rec.get("picks")][0]
+        self.assertEqual(first["risk_state"], "RED")
+        self.assertAlmostEqual(sum(first["weights"]), 0.5)
+        self.assertAlmostEqual(first["cash_target_weight"], 0.5)
+
     def test_min_positions_scales_exposure_to_cash(self) -> None:
         days = pd.bdate_range("2024-01-01", periods=45)
         prices = pd.DataFrame(
@@ -536,6 +630,41 @@ class TestMinPositionsRule(unittest.TestCase):
         self.assertEqual(first["picks"], ["BBB"])
         self.assertAlmostEqual(sum(first["weights"]), 0.5)
         self.assertAlmostEqual(first["cash_target_weight"], 0.5)
+
+    def test_empty_signal_cash_policy_liquidates_previous_positions(self) -> None:
+        days = pd.bdate_range("2024-01-01", "2024-03-01")
+        prices = pd.DataFrame(
+            {
+                "AAA": np.linspace(10.0, 12.0, len(days)),
+                "BBB": np.linspace(10.0, 10.5, len(days)),
+            },
+            index=days,
+        )
+        index = pd.MultiIndex.from_product([days, prices.columns], names=["date", "symbol"])
+        factor = pd.Series(np.nan, index=index)
+        factor.loc[(pd.Timestamp("2024-01-31"), "AAA")] = 2.0
+        factor.loc[(pd.Timestamp("2024-01-31"), "BBB")] = 1.0
+        settings = replace(
+            get_settings(),
+            portfolio_weighting="equal",
+            top_k=1,
+            commission_rate=0.0,
+            max_position_weight=1.0,
+            max_rebalance_turnover=0.0,
+            force_final_rebalance=False,
+        )
+        _, meta = run_single_backtest(
+            "EMPTY_TO_CASH",
+            factor_values=factor,
+            prices=prices,
+            settings=settings,
+            empty_signal_policy="cash",
+        )
+        logs = meta["rebalance_log"]
+        self.assertEqual(logs[-1]["weighting"], "empty_signal_cash")
+        self.assertEqual(logs[-1]["picks"], [])
+        self.assertEqual(logs[-1]["cash_target_weight"], 1.0)
+        self.assertEqual(meta["empty_signal_policy"], "cash")
 
 
 if __name__ == "__main__":

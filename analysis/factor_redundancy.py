@@ -55,24 +55,25 @@ def factor_cross_sectional_correlation(
     if not factor_list:
         return pd.DataFrame(), pd.DataFrame()
 
-    sums = pd.DataFrame(0.0, index=factor_list, columns=factor_list)
-    counts = pd.DataFrame(0, index=factor_list, columns=factor_list, dtype=int)
-
-    for _, day in p[factor_list].groupby(level="date", sort=True):
-        frame = day.droplevel("date")
-        valid_cols = [c for c in factor_list if frame[c].notna().sum() >= int(min_symbols)]
-        if len(valid_cols) < 2:
-            continue
-        corr = frame[valid_cols].corr(method=method, min_periods=int(min_symbols))
-        corr = corr.replace([np.inf, -np.inf], np.nan)
-        for a in valid_cols:
-            for b in valid_cols:
-                val = corr.loc[a, b]
-                if pd.notna(val):
-                    sums.loc[a, b] += float(val)
-                    counts.loc[a, b] += 1
-
-    corr_mean = sums.astype(float).where(counts > 0) / counts.replace(0, np.nan)
+    # pandas computes the same pairwise daily correlation matrix in compiled
+    # groupby paths.  Aggregating that panel removes the Python day × factor²
+    # loop, which is material when the gate is reevaluated every week.
+    daily = (
+        p[factor_list]
+        .groupby(level="date", sort=True)
+        .corr(method=method, min_periods=int(min_symbols))
+        .replace([np.inf, -np.inf], np.nan)
+    )
+    if daily.empty:
+        empty_float = pd.DataFrame(np.nan, index=factor_list, columns=factor_list)
+        empty_int = pd.DataFrame(0, index=factor_list, columns=factor_list, dtype=int)
+        return empty_float, empty_int
+    corr_mean = daily.groupby(level=1, sort=False).mean().reindex(
+        index=factor_list, columns=factor_list
+    )
+    counts = daily.groupby(level=1, sort=False).count().reindex(
+        index=factor_list, columns=factor_list, fill_value=0
+    ).astype(int)
     for f in factor_list:
         if counts.loc[f, f] > 0:
             corr_mean.loc[f, f] = 1.0

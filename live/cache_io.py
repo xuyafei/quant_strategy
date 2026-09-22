@@ -177,6 +177,10 @@ def _rebalance_log_to_frame(log: list[dict[str, Any]]) -> pd.DataFrame:
                     "industry_cap_applied": rec.get("industry_cap_applied", ""),
                     "max_industry_exposure": rec.get("max_industry_exposure", ""),
                     "n_industries": rec.get("n_industries", ""),
+                    "tech_growth_cap_enabled": rec.get("tech_growth_cap_enabled", ""),
+                    "max_tech_growth_weight": rec.get("max_tech_growth_weight", ""),
+                    "tech_growth_exposure": rec.get("tech_growth_exposure", ""),
+                    "tech_growth_cap_applied": rec.get("tech_growth_cap_applied", ""),
                     "volatility_target_enabled": rec.get("volatility_target_enabled", ""),
                     "target_volatility": rec.get("target_volatility", ""),
                     "portfolio_estimated_volatility": rec.get("portfolio_estimated_volatility", ""),
@@ -189,6 +193,12 @@ def _rebalance_log_to_frame(log: list[dict[str, Any]]) -> pd.DataFrame:
                     "min_positions_actual": rec.get("min_positions_actual", ""),
                     "min_positions_exposure": rec.get("min_positions_exposure", ""),
                     "min_positions_applied": rec.get("min_positions_applied", ""),
+                    "gross_exposure_multiplier": rec.get("gross_exposure_multiplier", ""),
+                    "gross_exposure_scaled": rec.get("gross_exposure_scaled", ""),
+                    "gross_target_weight": rec.get("gross_target_weight", ""),
+                    "cash_target_weight_after_gross": rec.get("cash_target_weight_after_gross", ""),
+                    "risk_state": rec.get("risk_state", ""),
+                    "risk_override_applied": rec.get("risk_override_applied", ""),
                 }
             )
     return pd.DataFrame(
@@ -220,6 +230,10 @@ def _rebalance_log_to_frame(log: list[dict[str, Any]]) -> pd.DataFrame:
             "industry_cap_applied",
             "max_industry_exposure",
             "n_industries",
+            "tech_growth_cap_enabled",
+            "max_tech_growth_weight",
+            "tech_growth_exposure",
+            "tech_growth_cap_applied",
             "volatility_target_enabled",
             "target_volatility",
             "portfolio_estimated_volatility",
@@ -232,6 +246,12 @@ def _rebalance_log_to_frame(log: list[dict[str, Any]]) -> pd.DataFrame:
             "min_positions_actual",
             "min_positions_exposure",
             "min_positions_applied",
+            "gross_exposure_multiplier",
+            "gross_exposure_scaled",
+            "gross_target_weight",
+            "cash_target_weight_after_gross",
+            "risk_state",
+            "risk_override_applied",
         ],
     )
 

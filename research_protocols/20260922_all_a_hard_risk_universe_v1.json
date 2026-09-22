@@ -1,0 +1,92 @@
+{
+  "protocol_id": "ALL_A_HARD_RISK_UNIVERSE_V1",
+  "frozen_at": "2026-09-22T16:10:00+08:00",
+  "research_status": "PRE_REGISTERED_RETROSPECTIVE_RISK_UNIVERSE_ABLATION_NOT_LIVE_APPROVED",
+  "objective": "Add explicit point-in-time hard financial and delisting risks to the existing Shanghai/Shenzhen dynamic tradable universe and compare it with the unfiltered base universe and CSI300 under a next-session executable timing convention.",
+  "data": {
+    "provider": "Tushare Pro",
+    "raw_start": "2023-01-01",
+    "risk_history_start": "2022-01-01",
+    "evaluation_start": "2025-01-03",
+    "evaluation_end": "2026-09-04",
+    "historical_data_already_seen": true,
+    "true_forward_data_used": false,
+    "balance_point_in_time_key": "max(ann_date,f_ann_date)",
+    "audit_point_in_time_key": "ann_date",
+    "delisting_arrangement_source": "historical namechange effective intervals"
+  },
+  "base_universe": {
+    "base": "all historically listed Shanghai and Shenzhen A shares",
+    "minimum_listing_open_sessions": 250,
+    "exclude_st_and_star_st": true,
+    "exclude_on_or_after_delist_date": true,
+    "require_price_on_decision_date_for_new_selection": true,
+    "liquidity_lookback_open_sessions": 20,
+    "minimum_valid_trading_days": 15,
+    "minimum_adv20_cny": 50000000
+  },
+  "hard_risk_overlay": {
+    "negative_net_assets": {
+      "enabled": true,
+      "field": "total_hldr_eqy_exc_min_int",
+      "block_when": "latest point-in-time value <= 0"
+    },
+    "severe_audit_opinion": {
+      "enabled": true,
+      "blocking_patterns": ["否定意见", "无法表示意见", "拒绝表示意见"],
+      "qualified_opinion_policy": "warning_only_not_blocked"
+    },
+    "delisting_arrangement": {
+      "enabled": true,
+      "blocking_name_patterns": ["contains 退市", "starts with 退"]
+    },
+    "missing_balance_or_audit_policy": "record_unavailable_but_do_not_block",
+    "profitability_growth_valuation_filters_enabled": false,
+    "market_cap_filter_enabled": false
+  },
+  "candidate_families": {
+    "VALUE": ["PE", "FREE_CASH_FLOW_YIELD"],
+    "QUALITY": ["ROE", "GROSS_MARGIN", "NET_MARGIN", "LOW_DEBT_TO_ASSETS", "CASH_PROFIT_QUALITY"],
+    "GROWTH": ["REVENUE_GROWTH", "PROFIT_GROWTH"],
+    "MOMENTUM_REVERSAL": ["MOMENTUM", "MOMENTUM_60D", "REVERSAL_5D"],
+    "RISK": ["VOLATILITY"]
+  },
+  "factor_and_portfolio": {
+    "performance_admission_enabled": false,
+    "within_family": "fixed_equal_weight_over_available_components",
+    "between_families": "fixed_equal_20_percent_each",
+    "cross_sectional_preprocess": "1pct_99pct_winsorized_industry_zscore_with_global_fallback",
+    "all_five_families_required": true,
+    "top_k": 50,
+    "stock_weighting": "equal",
+    "commission_rate": 0.0003,
+    "risk_overlays_enabled": false
+  },
+  "execution": {
+    "primary_timing": "NEXT_SESSION_CLOSE",
+    "signal_information_cutoff": "decision_session_close",
+    "same_session_close_results_primary": false,
+    "note": "Next-session close is conservative and executable; later production work may replace it with next-open or VWAP."
+  },
+  "comparisons": [
+    "ALL_A_BASE_ADV50M_TOP50_TPLUS1_CLOSE",
+    "ALL_A_HARD_RISK_ADV50M_TOP50_TPLUS1_CLOSE",
+    "CSI300_PIT_TOP50_TPLUS1_CLOSE"
+  ],
+  "benchmarks": "each strategy is compared with the next-session equal-weight benchmark of its own point-in-time universe",
+  "pre_registered_questions": [
+    "How many otherwise tradable securities are removed by each hard-risk reason?",
+    "Does the hard-risk overlay reduce drawdown or tail loss without materially destroying own-universe excess return?",
+    "Does the conclusion hold in both pre-existing subperiods?",
+    "How does the hard-risk version compare with CSI300 under the same next-session timing?"
+  ],
+  "forbidden_actions": [
+    "add ROE profit growth PE PB or cash-flow-quality thresholds after viewing returns",
+    "change severe audit patterns after viewing returns",
+    "block missing financial data after viewing returns",
+    "add market-cap filters or change ADV threshold after viewing returns",
+    "change factor signs family weights top_k dates or execution timing after viewing returns",
+    "treat retrospective results as true forward evidence",
+    "approve live trading from this experiment"
+  ]
+}

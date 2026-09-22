@@ -1,0 +1,81 @@
+{
+  "protocol_id": "CSI300_NO_ADMISSION_FIXED_FUSION_V1",
+  "frozen_at": "2026-09-12T23:00:00+08:00",
+  "research_status": "PRE_REGISTERED_RETROSPECTIVE_ABLATION_NOT_LIVE_APPROVED",
+  "objective": "Isolate the effect of factor admission by removing PASS/WATCH/REJECT and redundancy pruning while holding the prior simple fixed-family fusion experiment constant.",
+  "data": {
+    "source": "output/csi300_pit_integrated_backtest_20230101_20260904_multihorizon",
+    "universe": "CSI300_POINT_IN_TIME",
+    "data_start": "2023-01-01",
+    "data_end": "2026-09-04",
+    "evaluation_start": "2025-01-03",
+    "evaluation_end": "2026-09-04",
+    "early_comparison_period": ["2025-01-03", "2025-09-11"],
+    "known_development_period": ["2025-09-12", "2026-09-04"],
+    "true_forward_data_used": false,
+    "interpretation": "Retrospective ablation using dates already seen in articles 111-116."
+  },
+  "candidate_families": {
+    "VALUE": ["PE", "FREE_CASH_FLOW_YIELD"],
+    "QUALITY": ["ROE", "GROSS_MARGIN", "NET_MARGIN", "LOW_DEBT_TO_ASSETS", "CASH_PROFIT_QUALITY"],
+    "GROWTH": ["REVENUE_GROWTH", "PROFIT_GROWTH"],
+    "MOMENTUM_REVERSAL": ["MOMENTUM", "MOMENTUM_60D", "REVERSAL_5D"],
+    "RISK": ["VOLATILITY"]
+  },
+  "excluded_candidates": ["ML_SCORE", "ANNOUNCEMENT_EVENT_SCORE", "VOLUME_RATIO_20D"],
+  "unavailable_in_existing_panel": ["PB", "MAX_DRAWDOWN", "BETA"],
+  "factor_orientation": "Use existing high-is-better definitions without post-result sign changes.",
+  "admission": {
+    "enabled": false,
+    "all_available_candidate_factors_enter_fusion": true,
+    "watch_reject_labels_ignored": true,
+    "redundancy_pruning_enabled": false
+  },
+  "fusion": {
+    "within_family": "equal_mean_of_all_available_factor_zscores",
+    "between_families": "equal_mean_of_same-date cross-sectional family zscores",
+    "family_weights": {
+      "VALUE": 0.2,
+      "QUALITY": 0.2,
+      "GROWTH": 0.2,
+      "MOMENTUM_REVERSAL": 0.2,
+      "RISK": 0.2
+    },
+    "rolling_performance_weights": false,
+    "market_state_gate": false,
+    "model_disagreement_gate": false
+  },
+  "portfolio": {
+    "primary_top_k": 50,
+    "concentration_sensitivity_top_k": 10,
+    "rebalance_frequency": "W-FRI",
+    "stock_weighting": "equal",
+    "commission_rate": 0.0003,
+    "target_volatility": 0.0,
+    "maximum_turnover_cap": 0.0,
+    "industry_weight_cap": 0.0,
+    "technology_growth_cap": 0.0,
+    "minimum_positions_overlay": 0,
+    "empty_signal_policy": "cash"
+  },
+  "benchmarks": {
+    "primary": "CSI300 point-in-time constituents, weekly equal weight, same portfolio engine and commission rate",
+    "admission_ablation_control": "output/csi300_simple_admission_fusion_20260913"
+  },
+  "historical_acceptance": {
+    "primary_top50_total_return_greater_than_weekly_costed_pit_equal_weight": true,
+    "primary_top50_annualized_excess_greater_than_zero": true,
+    "primary_top50_information_ratio_greater_than_zero": true,
+    "primary_top50_positive_return_gap_in_both_subperiods": true,
+    "live_approval_possible": false
+  },
+  "forbidden_actions": [
+    "remove_a_factor_after_viewing_results",
+    "change_factor_signs_after_viewing_results",
+    "change_family_weights_after_viewing_results",
+    "change_evaluation_period_after_viewing_results",
+    "select_top10_as_primary_after_viewing_results",
+    "enable_ML_dynamic_weights_or_state_gates",
+    "treat_this_seen_period_as_true_out_of_sample_evidence"
+  ]
+}

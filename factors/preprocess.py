@@ -47,26 +47,29 @@ def cross_sectional_zscore(
     if not isinstance(panel.index, pd.MultiIndex) or panel.index.nlevels != 2:
         raise TypeError("panel 须为 MultiIndex(date, symbol) × 因子列")
 
-    out = pd.DataFrame(index=panel.index, columns=panel.columns, dtype=float)
-    dates = panel.index.get_level_values(0).unique()
-    for dt in dates:
-        idx = panel.index.get_level_values(0) == dt
-        sub = panel.loc[idx].astype(float)
-        for col in sub.columns:
-            s = sub[col]
-            x = winsorize_series(s, lower_q=lower_q, upper_q=upper_q) if winsorize else s
-            valid = x.dropna()
-            if len(valid) < int(min_count):
-                if constant_fill is not None:
-                    out.loc[idx, col] = float(constant_fill)
-                continue
-            mu = float(valid.mean())
-            sig = float(valid.std(ddof=0))
-            if not np.isfinite(sig) or sig < 1e-12:
-                if constant_fill is not None:
-                    out.loc[idx, col] = float(constant_fill)
-                continue
-            out.loc[idx, col] = (x - mu) / sig
+    values = panel.astype(float)
+    dates = values.index.get_level_values(0)
+    out = pd.DataFrame(index=values.index, columns=values.columns, dtype=float)
+    for col in values.columns:
+        s = values[col]
+        grouped = s.groupby(dates, sort=False)
+        if winsorize:
+            lower = grouped.transform("quantile", q=float(lower_q))
+            upper = grouped.transform("quantile", q=float(upper_q))
+            x = s.clip(lower=lower, upper=upper)
+        else:
+            x = s
+        x_grouped = x.groupby(dates, sort=False)
+        count = x_grouped.transform("count")
+        mean = x_grouped.transform("mean")
+        sigma = x_grouped.transform("std", ddof=0)
+        valid_group = (count >= int(min_count)) & sigma.notna() & (sigma >= 1e-12)
+        z = (x - mean) / sigma
+        if constant_fill is not None:
+            z = z.mask(~valid_group, float(constant_fill))
+        else:
+            z = z.where(valid_group)
+        out[col] = z
     out.index = out.index.set_names(["date", "symbol"])
     return out
 
@@ -123,34 +126,33 @@ def industry_neutral_zscore(
         min_count=min_count,
         constant_fill=constant_fill,
     )
+    values = panel.astype(float)
     out = global_z.copy()
-    dates = panel.index.get_level_values(0).unique()
+    dates = values.index.get_level_values(0)
     min_industry_count = max(int(min_industry_count), int(min_count))
+    industries = industry_ser.fillna("").astype(str).str.strip()
+    has_industry = industries.ne("")
 
-    for dt in dates:
-        idx = panel.index.get_level_values(0) == dt
-        sub = panel.loc[idx].astype(float)
-        ind_sub = industry_ser.loc[idx].fillna("").astype(str).str.strip()
-        for ind in sorted({x for x in ind_sub.unique() if x}):
-            ind_idx = ind_sub.index[ind_sub == ind]
-            if len(ind_idx) == 0:
-                continue
-            for col in sub.columns:
-                s = sub.loc[ind_idx, col]
-                valid = s.dropna()
-                if len(valid) < min_industry_count:
-                    continue
-                x = winsorize_series(s, lower_q=lower_q, upper_q=upper_q) if winsorize else s
-                valid_x = x.dropna()
-                if len(valid_x) < min_industry_count:
-                    continue
-                mu = float(valid_x.mean())
-                sig = float(valid_x.std(ddof=0))
-                if not np.isfinite(sig) or sig < 1e-12:
-                    if constant_fill is not None:
-                        out.loc[ind_idx, col] = float(constant_fill)
-                    continue
-                out.loc[ind_idx, col] = (x - mu) / sig
+    for col in values.columns:
+        s = values[col]
+        grouped = s.groupby([dates, industries], sort=False, dropna=False)
+        if winsorize:
+            lower = grouped.transform("quantile", q=float(lower_q))
+            upper = grouped.transform("quantile", q=float(upper_q))
+            x = s.clip(lower=lower, upper=upper)
+        else:
+            x = s
+        x_grouped = x.groupby([dates, industries], sort=False, dropna=False)
+        count = x_grouped.transform("count")
+        mean = x_grouped.transform("mean")
+        sigma = x_grouped.transform("std", ddof=0)
+        enough = has_industry & (count >= min_industry_count)
+        stable = sigma.notna() & (sigma >= 1e-12)
+        replacement = enough & stable
+        out.loc[replacement, col] = ((x - mean) / sigma).loc[replacement]
+        if constant_fill is not None:
+            constant_group = enough & ~stable
+            out.loc[constant_group, col] = float(constant_fill)
     out.index = out.index.set_names(["date", "symbol"])
     return out
 

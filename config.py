@@ -80,6 +80,11 @@ class Settings:
     rolling_oos_validation_days: int = 40
     rolling_oos_step_days: int = 40
     rolling_oos_min_validation_days: int = 20
+    # 逐调仓日 Walk-forward 准入：门禁只使用调仓日前历史；至少两个滚动验证窗口后才交易。
+    walk_forward_min_history_days: int = 260
+    walk_forward_min_rolling_windows: int = 2
+    # 0 表示使用全部扩展历史；正数表示只保留最近 N 个交易日做准入判断。
+    walk_forward_history_lookback_days: int = 0
     # 牛熊市分段：用股票池等权基准的滚动收益和回撤识别 BULL / BEAR / SIDEWAYS。
     market_regime_lookback_days: int = 60
     market_regime_bull_return_threshold: float = 0.10
@@ -106,6 +111,18 @@ class Settings:
     # 行业权重上限：0 表示关闭；开启后读取 industry 列，限制单个行业目标权重占比。
     max_industry_weight: float = 0.0
     industry_col: str = "industry"
+    # 科技成长综合暴露：跨越细行业口径统一约束半导体、通信、元器件与电气设备。
+    # 0 表示关闭；启用后先执行细行业上限，再执行该聚合风险桶上限。
+    max_tech_growth_weight: float = 0.0
+    tech_growth_industries: tuple[str, ...] = (
+        "半导体",
+        "通信设备",
+        "元器件",
+        "电气设备",
+        "计算机设备",
+        "软件服务",
+        "互联网",
+    )
     # 波动率目标：0 表示关闭；开启后按历史协方差估算组合年化波动，超目标时降低股票仓位，剩余保留现金。
     target_volatility: float = 0.0
     volatility_target_lookback_days: int = 60
@@ -206,6 +223,9 @@ def get_settings() -> Settings:
         ),
         max_industry_weight=_float_env(
             "QUANT_MAX_INDUSTRY_WEIGHT", Settings.max_industry_weight
+        ),
+        max_tech_growth_weight=_float_env(
+            "QUANT_MAX_TECH_GROWTH_WEIGHT", Settings.max_tech_growth_weight
         ),
         target_volatility=_float_env(
             "QUANT_TARGET_VOLATILITY", Settings.target_volatility

@@ -1,0 +1,90 @@
+{
+  "protocol_id": "CSI300_NO_ADMISSION_ROLLING_IC_WEIGHT_V1",
+  "frozen_at": "2026-09-13T10:00:00+08:00",
+  "research_status": "PRE_REGISTERED_RETROSPECTIVE_WEIGHTING_ABLATION_NOT_LIVE_APPROVED",
+  "objective": "Compare point-in-time rolling IC/ICIR factor weights with the existing fixed equal-within-family fusion while keeping factor admission disabled and every other backtest setting unchanged.",
+  "data": {
+    "source": "output/csi300_pit_integrated_backtest_20230101_20260904_multihorizon",
+    "fixed_weight_control": "output/csi300_no_admission_fusion_20260912",
+    "universe": "CSI300_POINT_IN_TIME",
+    "data_start": "2023-01-01",
+    "data_end": "2026-09-04",
+    "evaluation_start": "2025-01-03",
+    "evaluation_end": "2026-09-04",
+    "early_comparison_period": ["2025-01-03", "2025-09-11"],
+    "known_development_period": ["2025-09-12", "2026-09-04"],
+    "true_forward_data_used": false,
+    "interpretation": "All evaluation dates have already been seen; this is a retrospective weighting-method ablation only."
+  },
+  "candidate_families": {
+    "VALUE": ["PE", "FREE_CASH_FLOW_YIELD"],
+    "QUALITY": ["ROE", "GROSS_MARGIN", "NET_MARGIN", "LOW_DEBT_TO_ASSETS", "CASH_PROFIT_QUALITY"],
+    "GROWTH": ["REVENUE_GROWTH", "PROFIT_GROWTH"],
+    "MOMENTUM_REVERSAL": ["MOMENTUM", "MOMENTUM_60D", "REVERSAL_5D"],
+    "RISK": ["VOLATILITY"]
+  },
+  "admission": {
+    "enabled": false,
+    "all_available_candidate_factors_enter_fusion": true,
+    "watch_reject_labels_ignored": true,
+    "redundancy_pruning_enabled": false,
+    "factor_sign_reversal_enabled": false
+  },
+  "rolling_weight": {
+    "update_frequency": "W-FRI",
+    "ic_method": "daily_cross_sectional_spearman_rank_ic",
+    "forward_return_days": 5,
+    "history_window_trading_days": 252,
+    "minimum_valid_ic_days": 120,
+    "information_cutoff": "Only IC observations whose complete 5-trading-day forward return is observable strictly before the rebalance date",
+    "strength_formula": "Equal blend of the non-negative mean-IC share and non-negative ICIR share within each family; fall back to equal if neither component has positive evidence",
+    "between_family_weight": "fixed_equal_20_percent_each",
+    "within_family_minimum_weight": 0.10,
+    "minimum_implied_total_factor_weight": 0.02,
+    "weekly_weight_smoothing": 0.50,
+    "negative_ic_sign_flip": false,
+    "zero_weight_allowed": false,
+    "warmup_fallback": "equal_within_family"
+  },
+  "score_construction": {
+    "within_family": "availability-adjusted weighted mean of existing oriented factor z-scores",
+    "family_standardization": "same-date cross-sectional z-score",
+    "between_families": "equal mean requiring all five family scores",
+    "eligibility": "point-in-time CSI300 membership"
+  },
+  "portfolio": {
+    "primary_top_k": 50,
+    "rebalance_frequency": "W-FRI",
+    "stock_weighting": "equal",
+    "commission_rate": 0.0003,
+    "target_volatility": 0.0,
+    "maximum_turnover_cap": 0.0,
+    "industry_weight_cap": 0.0,
+    "technology_growth_cap": 0.0,
+    "minimum_positions_overlay": 0,
+    "empty_signal_policy": "cash"
+  },
+  "comparisons": {
+    "primary_control": "NO_ADMISSION_ALL_FACTOR_FIXED_FUSION_TOP50",
+    "benchmark": "CSI300 point-in-time constituents, weekly equal weight, same portfolio engine and commission rate",
+    "single_changed_dimension": "factor weights within each family"
+  },
+  "reporting": {
+    "full_period_metrics": true,
+    "early_and_known_subperiods": true,
+    "weight_history_and_dispersion": true,
+    "turnover_comparison": true,
+    "point_in_time_audit": true
+  },
+  "forbidden_actions": [
+    "remove_a_factor_after_viewing_results",
+    "change_factor_signs_after_viewing_results",
+    "change_ic_horizon_or_history_window_after_viewing_results",
+    "change_weight_floor_or_smoothing_after_viewing_results",
+    "change_family_weights_after_viewing_results",
+    "change_evaluation_period_after_viewing_results",
+    "change_top_k_after_viewing_results",
+    "enable_state_gates_or_portfolio_overlays",
+    "treat_this_seen_period_as_true_out_of_sample_evidence"
+  ]
+}

@@ -138,6 +138,10 @@ class TestExperimentOutputs(unittest.TestCase):
                     "industry_cap_applied",
                     "max_industry_exposure",
                     "n_industries",
+                    "tech_growth_cap_enabled",
+                    "max_tech_growth_weight",
+                    "tech_growth_exposure",
+                    "tech_growth_cap_applied",
                     "volatility_target_enabled",
                     "target_volatility",
                     "portfolio_estimated_volatility",
@@ -150,6 +154,12 @@ class TestExperimentOutputs(unittest.TestCase):
                     "min_positions_actual",
                     "min_positions_exposure",
                     "min_positions_applied",
+                    "gross_exposure_multiplier",
+                    "gross_exposure_scaled",
+                    "gross_target_weight",
+                    "cash_target_weight_after_gross",
+                    "risk_state",
+                    "risk_override_applied",
                 ],
             )
             self.assertEqual(list(log_df["symbol"]), ["AAA", "BBB"])

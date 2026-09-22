@@ -1,0 +1,102 @@
+{
+  "protocol_id": "CSI300_SIMPLE_ADMISSION_FUSION_V1",
+  "frozen_at": "2026-09-13T00:00:00+08:00",
+  "research_status": "PRE_REGISTERED_RETROSPECTIVE_COMPARISON_NOT_LIVE_APPROVED",
+  "objective": "Test whether a one-time factor admission, within-family redundancy pruning, and fixed equal-weight family fusion can outperform a like-for-like weekly point-in-time equal-weight benchmark without ML, dynamic gates, rolling weights, or regime overlays.",
+  "data": {
+    "source": "output/csi300_pit_integrated_backtest_20230101_20260904_multihorizon",
+    "universe": "CSI300_POINT_IN_TIME",
+    "data_start": "2023-01-01",
+    "data_end": "2026-09-04",
+    "admission_as_of": "2025-01-03",
+    "admission_information_cutoff": "strictly_before_admission_as_of",
+    "evaluation_period": ["2025-01-03", "2026-09-04"],
+    "early_comparison_period": ["2025-01-03", "2025-09-11"],
+    "known_development_period": ["2025-09-12", "2026-09-04"],
+    "true_forward_data_used": false,
+    "interpretation": "All evaluation dates have already appeared in articles 111-116; results are retrospective diagnostics only."
+  },
+  "candidate_families": {
+    "VALUE": ["PE", "FREE_CASH_FLOW_YIELD"],
+    "QUALITY": ["ROE", "GROSS_MARGIN", "NET_MARGIN", "LOW_DEBT_TO_ASSETS", "CASH_PROFIT_QUALITY"],
+    "GROWTH": ["REVENUE_GROWTH", "PROFIT_GROWTH"],
+    "MOMENTUM_REVERSAL": ["MOMENTUM", "MOMENTUM_60D", "REVERSAL_5D"],
+    "RISK": ["VOLATILITY"]
+  },
+  "excluded_candidates": [
+    "ML_SCORE",
+    "ANNOUNCEMENT_EVENT_SCORE",
+    "VOLUME_RATIO_20D"
+  ],
+  "unavailable_in_existing_panel": [
+    "PB",
+    "MAX_DRAWDOWN",
+    "BETA"
+  ],
+  "factor_orientation": "Use existing high-is-better factor definitions; signs may not be flipped after results are viewed.",
+  "admission": {
+    "method": "existing_multi_horizon_and_rolling_oos_factor_selection",
+    "minimum_coverage": 0.5,
+    "minimum_valid_dates": 60,
+    "minimum_factor_score": 0.15,
+    "minimum_mean_ic": 0.0,
+    "minimum_positive_ic_rate": 0.5,
+    "minimum_top_minus_bottom_annualized": 0.0,
+    "minimum_monotonicity": 0.4,
+    "required_decision_for_fusion": "PASS",
+    "watch_fallback": false,
+    "dynamic_readmission_during_evaluation": false
+  },
+  "redundancy": {
+    "scope": "within_family_only",
+    "metric": "cross_sectional_spearman",
+    "absolute_correlation_threshold": 0.7,
+    "selection_rule": "existing_preregistered_redundancy_report"
+  },
+  "fusion": {
+    "within_family": "equal_mean_of_admitted_nonredundant_factor_zscores",
+    "between_families": "equal_mean_of_same_date_cross_sectional_family_zscores",
+    "rolling_performance_weights": false,
+    "market_state_gate": false,
+    "model_disagreement_gate": false
+  },
+  "portfolio": {
+    "primary_top_k": 50,
+    "concentration_sensitivity_top_k": 10,
+    "rebalance_frequency": "W-FRI",
+    "stock_weighting": "equal",
+    "commission_rate": 0.0003,
+    "target_volatility": 0.0,
+    "maximum_turnover_cap": 0.0,
+    "industry_weight_cap": 0.0,
+    "technology_growth_cap": 0.0,
+    "minimum_positions_overlay": 0,
+    "empty_signal_policy": "cash"
+  },
+  "benchmarks": {
+    "primary": "CSI300 point-in-time constituents, weekly equal weight, same portfolio engine and commission rate",
+    "legacy_diagnostic": "Daily costless point-in-time equal-weight return average used in articles 111-116"
+  },
+  "historical_acceptance": {
+    "primary_top50_total_return_greater_than_weekly_costed_pit_equal_weight": true,
+    "primary_top50_annualized_excess_greater_than_zero": true,
+    "primary_top50_information_ratio_greater_than_zero": true,
+    "primary_top50_positive_return_gap_in_both_subperiods": true,
+    "live_approval_possible": false
+  },
+  "comparison_policy": {
+    "common_interval_comparison": "Normalize saved article 112-116 NAV series to each requested common period when available.",
+    "article_111": "Retain original reported metrics only because no saved daily NAV CSV is available.",
+    "do_not_rank_incomparable_rows": true
+  },
+  "forbidden_actions": [
+    "change_factor_signs_after_viewing_results",
+    "promote_WATCH_or_REJECT_factors",
+    "change_admission_as_of_after_viewing_results",
+    "change_family_weights_after_viewing_results",
+    "select_top10_instead_of_top50_as_primary_after_viewing_results",
+    "enable_ML_or_dynamic_factor_weights",
+    "add_state_or_disagreement_gates",
+    "treat_this_seen_period_as_true_out_of_sample_evidence"
+  ]
+}

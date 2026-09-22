@@ -1,0 +1,85 @@
+{
+  "protocol_id": "CSI300_SOFT_FACTOR_GOVERNANCE_V1",
+  "frozen_at": "2026-09-15T10:00:00+08:00",
+  "research_status": "PRE_REGISTERED_RETROSPECTIVE_SOFT_GATE_ABLATION_NOT_LIVE_APPROVED",
+  "objective": "Test whether replacing hard performance admission with ACTIVE/WATCH/QUARANTINE/RETIRED governance improves robustness while preserving all data-valid traditional factors.",
+  "data": {
+    "source": "output/csi300_pit_integrated_backtest_20230101_20260904_multihorizon",
+    "point_in_time_health_source": "output/csi300_walk_forward_weekly_20230101_20260904/walk_forward/factor_decisions.csv",
+    "universe": "CSI300_POINT_IN_TIME",
+    "evaluation_start": "2025-01-03",
+    "evaluation_end": "2026-09-04",
+    "early_comparison_period": ["2025-01-03", "2025-09-11"],
+    "known_development_period": ["2025-09-12", "2026-09-04"],
+    "historical_data_already_seen": true,
+    "true_forward_data_used": false
+  },
+  "candidate_families": {
+    "VALUE": ["PE", "FREE_CASH_FLOW_YIELD"],
+    "QUALITY": ["ROE", "GROSS_MARGIN", "NET_MARGIN", "LOW_DEBT_TO_ASSETS", "CASH_PROFIT_QUALITY"],
+    "GROWTH": ["REVENUE_GROWTH", "PROFIT_GROWTH"],
+    "MOMENTUM_REVERSAL": ["MOMENTUM", "MOMENTUM_60D", "REVERSAL_5D"],
+    "RISK": ["VOLATILITY"]
+  },
+  "state_mapping": {
+    "ACTIVE": "Existing point-in-time PASS and data-valid",
+    "WATCH": "Existing point-in-time WATCH or REJECT, renamed to monitoring state and not automatically removed",
+    "QUARANTINE": "Historical coverage below 0.80, fewer than 100 valid symbols, missing audit row, or non-point-in-time audit",
+    "RETIRED": "Never assigned automatically in this retrospective test; requires a separately approved future strategy version"
+  },
+  "data_logic_gate": {
+    "minimum_historical_coverage": 0.80,
+    "minimum_valid_symbols": 100,
+    "history_end_must_be_strictly_before_rebalance": true,
+    "quarantine_multiplier": 0.0
+  },
+  "variants": {
+    "SOFT_GOVERNANCE_MAIN": {
+      "active_multiplier": 1.0,
+      "watch_multiplier": 1.0,
+      "description": "WATCH is monitoring only; every data-valid factor retains its fixed within-family weight"
+    },
+    "SOFT_WATCH_HALF_SHADOW": {
+      "active_multiplier": 1.0,
+      "watch_multiplier": 0.5,
+      "description": "Shadow-only mild performance gate; WATCH keeps half the ACTIVE multiplier and is never removed"
+    }
+  },
+  "fusion": {
+    "between_families": "fixed_equal_20_percent_each",
+    "within_family": "state multiplier normalized within family",
+    "family_score_standardization": "same-date cross-sectional z-score",
+    "all_five_families_required": true,
+    "factor_sign_reversal_enabled": false,
+    "redundancy_pruning_enabled": false,
+    "rolling_ic_weighting_enabled": false
+  },
+  "portfolio": {
+    "primary_top_k": 50,
+    "rebalance_frequency": "W-FRI",
+    "stock_weighting": "equal",
+    "commission_rate": 0.0003,
+    "target_volatility": 0.0,
+    "maximum_turnover_cap": 0.0,
+    "industry_weight_cap": 0.0,
+    "technology_growth_cap": 0.0,
+    "minimum_positions_overlay": 0,
+    "empty_signal_policy": "cash"
+  },
+  "comparisons": {
+    "strict_admission": "SIMPLE_ADMISSION_FIXED_FUSION_TOP50",
+    "no_admission_fixed": "NO_ADMISSION_ALL_FACTOR_FIXED_FUSION_TOP50",
+    "no_admission_rolling_ic": "NO_ADMISSION_ROLLING_IC_ICIR_FUSION_TOP50",
+    "benchmark": "CSI300_PIT_WEEKLY_EQUAL_WEIGHT_COSTED"
+  },
+  "forbidden_actions": [
+    "retire_a_factor_from_seen_historical_performance",
+    "change_watch_multiplier_after_viewing_results",
+    "change_quarantine_threshold_after_viewing_results",
+    "change_factor_signs_after_viewing_results",
+    "change_family_weights_after_viewing_results",
+    "change_evaluation_period_after_viewing_results",
+    "enable_redundancy_pruning_dynamic_ic_weights_or_state_gates",
+    "treat_this_seen_period_as_true_out_of_sample_evidence"
+  ]
+}

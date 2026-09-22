@@ -1,0 +1,94 @@
+{
+  "protocol_id": "ALL_A_DYNAMIC_TRADABLE_UNIVERSE_V1",
+  "frozen_at": "2026-09-20T22:20:00+08:00",
+  "research_status": "PRE_REGISTERED_RETROSPECTIVE_UNIVERSE_ABLATION_NOT_LIVE_APPROVED",
+  "objective": "Compare the existing CSI300 point-in-time stock-selection strategy with a self-defined, point-in-time Shanghai/Shenzhen A-share tradable universe while keeping factors, fusion, portfolio and costs unchanged.",
+  "data": {
+    "provider": "Tushare Pro",
+    "raw_start": "2023-01-01",
+    "evaluation_start": "2025-01-03",
+    "evaluation_end": "2026-09-04",
+    "historical_data_already_seen": true,
+    "true_forward_data_used": false,
+    "price_fields": ["open", "high", "low", "close", "vol", "amount"],
+    "adjustment": "qfq_from_daily_and_adj_factor",
+    "finance_point_in_time_key": "ann_date",
+    "st_history_source": "namechange effective intervals because dedicated st endpoint is unavailable for the supplied account",
+    "amount_source_unit": "thousand_cny",
+    "amount_normalized_unit": "cny"
+  },
+  "universe": {
+    "base": "all historically listed Shanghai and Shenzhen A shares returned by stock_basic L/D/P",
+    "supported_suffixes": [".SH", ".SZ"],
+    "beijing_exchange_included": false,
+    "minimum_listing_open_sessions": 250,
+    "exclude_st_and_star_st": true,
+    "exclude_on_or_after_delist_date": true,
+    "require_price_on_decision_date_for_new_selection": true,
+    "liquidity_lookback_open_sessions": 20,
+    "minimum_valid_trading_days": 15,
+    "primary_minimum_adv20_cny": 50000000,
+    "sensitivity_minimum_adv20_cny": [30000000, 100000000],
+    "market_cap_filter_enabled": false,
+    "profitability_filter_enabled": false,
+    "financial_quality_filter_enabled": false,
+    "held_suspension_policy": "execution layer retains and values an existing suspended position; universe eligibility only blocks a new selection"
+  },
+  "candidate_families": {
+    "VALUE": ["PE", "FREE_CASH_FLOW_YIELD"],
+    "QUALITY": ["ROE", "GROSS_MARGIN", "NET_MARGIN", "LOW_DEBT_TO_ASSETS", "CASH_PROFIT_QUALITY"],
+    "GROWTH": ["REVENUE_GROWTH", "PROFIT_GROWTH"],
+    "MOMENTUM_REVERSAL": ["MOMENTUM", "MOMENTUM_60D", "REVERSAL_5D"],
+    "RISK": ["VOLATILITY"]
+  },
+  "factor_and_fusion": {
+    "performance_admission_enabled": false,
+    "active_and_watch_same_weight": true,
+    "within_family": "fixed_equal_weight_over_available_components",
+    "between_families": "fixed_equal_20_percent_each",
+    "cross_sectional_preprocess": "1pct_99pct_winsorized_industry_zscore_with_global_fallback",
+    "all_five_families_required": true,
+    "rolling_ic_weighting_enabled": false,
+    "factor_sign_reversal_enabled": false
+  },
+  "portfolio": {
+    "primary_top_k": 50,
+    "rebalance_frequency": "W-FRI_last_open_session",
+    "stock_weighting": "equal",
+    "commission_rate": 0.0003,
+    "maximum_turnover_cap": 0.0,
+    "industry_weight_cap": 0.0,
+    "technology_growth_cap": 0.0,
+    "target_volatility": 0.0,
+    "minimum_positions_overlay": 0,
+    "empty_signal_policy": "cash"
+  },
+  "comparisons": {
+    "primary": "ALL_A_DYNAMIC_ADV50M_FIXED_FUSION_TOP50",
+    "liquidity_sensitivities": [
+      "ALL_A_DYNAMIC_ADV30M_FIXED_FUSION_TOP50",
+      "ALL_A_DYNAMIC_ADV100M_FIXED_FUSION_TOP50"
+    ],
+    "index_control": "CSI300_PIT_FIXED_FUSION_TOP50",
+    "saved_previous_strategy": "NO_ADMISSION_ALL_FACTOR_FIXED_FUSION_TOP50",
+    "benchmarks": [
+      "ALL_A_DYNAMIC_ADV50M_WEEKLY_EQUAL_WEIGHT_COSTED",
+      "CSI300_PIT_WEEKLY_EQUAL_WEIGHT_COSTED"
+    ]
+  },
+  "pre_registered_questions": [
+    "Does the custom-universe Top50 outperform its own weekly equal-weight custom-universe benchmark?",
+    "Does changing only the universe improve or weaken the Top50 strategy relative to the CSI300 point-in-time control?",
+    "Does the conclusion remain directionally stable at ADV20 thresholds of CNY30m and CNY100m?",
+    "How much universe turnover and portfolio turnover are introduced by the custom eligibility rules?"
+  ],
+  "forbidden_actions": [
+    "choose the ADV threshold after viewing returns",
+    "add a market-cap filter after viewing returns",
+    "add profitability or financial-quality filters to improve results",
+    "change factor signs family weights top_k or evaluation dates after viewing results",
+    "use current stock or ST status to overwrite historical eligibility",
+    "treat the retrospective result as true forward evidence",
+    "approve live trading from this experiment"
+  ]
+}
