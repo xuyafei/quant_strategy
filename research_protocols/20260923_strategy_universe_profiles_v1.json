@@ -1,0 +1,157 @@
+{
+  "protocol_id": "STRATEGY_UNIVERSE_PROFILES_V1",
+  "frozen_at": "2026-09-23T09:30:00+08:00",
+  "research_status": "PRE_REGISTERED_RETROSPECTIVE_STRATEGY_UNIVERSE_COMPARISON_NOT_LIVE_APPROVED",
+  "objective": "Build reusable point-in-time large-cap, mid-small-cap, value-data, growth-data, and technology-growth theme universes on top of the approved hard-risk base universe, then run one executable-timing backtest for each strategy mandate.",
+  "data": {
+    "provider": "Tushare Pro",
+    "raw_start": "2023-01-01",
+    "evaluation_start": "2025-01-03",
+    "evaluation_end": "2026-09-04",
+    "historical_data_already_seen": true,
+    "true_forward_data_used": false,
+    "daily_basic_fields": ["pe_ttm", "pb", "ps_ttm", "total_mv", "circ_mv"],
+    "industry_standard": "SW2021",
+    "industry_level": "L1",
+    "industry_interval_policy": "inclusive in_date and out_date",
+    "maximum_daily_basic_staleness_calendar_days": 7
+  },
+  "base_universe": {
+    "base": "all historically listed Shanghai and Shenzhen A shares",
+    "minimum_listing_open_sessions": 250,
+    "exclude_st_and_star_st": true,
+    "exclude_on_or_after_delist_date": true,
+    "require_price_on_decision_date_for_new_selection": true,
+    "liquidity_lookback_open_sessions": 20,
+    "minimum_valid_trading_days": 15,
+    "minimum_adv20_cny": 50000000,
+    "exclude_nonpositive_net_assets": true,
+    "block_severe_audit_opinions": ["否定意见", "无法表示意见", "拒绝表示意见"],
+    "exclude_delisting_arrangement": true
+  },
+  "strategy_universe_profiles": [
+    {
+      "name": "LARGE_CAP",
+      "kind": "size_large",
+      "parameters": {
+        "minimum_percentile": 0.70,
+        "definition": "top 30 percent of point-in-time circulating market value among base-universe stocks with fresh market-cap data"
+      }
+    },
+    {
+      "name": "MID_SMALL_CAP",
+      "kind": "size_mid_small",
+      "parameters": {
+        "maximum_percentile": 0.70,
+        "definition": "bottom 70 percent of point-in-time circulating market value among base-universe stocks with fresh market-cap data"
+      }
+    },
+    {
+      "name": "VALUE_READY",
+      "kind": "value",
+      "parameters": {
+        "minimum_components": 2,
+        "components": ["positive PE_TTM", "positive PB", "cash-flow-yield proxy available"],
+        "definition": "data-readiness universe only; no value rank threshold is applied in the universe layer"
+      }
+    },
+    {
+      "name": "GROWTH_READY",
+      "kind": "growth",
+      "parameters": {
+        "minimum_components": 2,
+        "components": ["revenue growth available", "profit growth available"],
+        "definition": "data-readiness universe only; growth may be positive or negative and is ranked only by the strategy"
+      }
+    },
+    {
+      "name": "TECH_GROWTH_THEME",
+      "kind": "industry_theme",
+      "parameters": {
+        "l1_names": ["电子", "计算机", "通信", "传媒", "电力设备"],
+        "definition": "configurable example theme built from historical SW2021 L1 membership intervals"
+      }
+    }
+  ],
+  "candidate_families": {
+    "VALUE": ["PE", "FREE_CASH_FLOW_YIELD"],
+    "QUALITY": ["ROE", "GROSS_MARGIN", "NET_MARGIN", "LOW_DEBT_TO_ASSETS", "CASH_PROFIT_QUALITY"],
+    "GROWTH": ["REVENUE_GROWTH", "PROFIT_GROWTH"],
+    "MOMENTUM_REVERSAL": ["MOMENTUM", "MOMENTUM_60D", "REVERSAL_5D"],
+    "RISK": ["VOLATILITY"]
+  },
+  "strategies": [
+    {
+      "name": "BASE_V2_MULTI_FACTOR_TOP50",
+      "universe": "BASE_V2",
+      "score": "fixed_equal_five_family_multi_factor",
+      "top_k": 50
+    },
+    {
+      "name": "LARGE_CAP_MULTI_FACTOR_TOP50",
+      "universe": "LARGE_CAP",
+      "score": "fixed_equal_five_family_multi_factor",
+      "top_k": 50
+    },
+    {
+      "name": "MID_SMALL_CAP_MULTI_FACTOR_TOP50",
+      "universe": "MID_SMALL_CAP",
+      "score": "fixed_equal_five_family_multi_factor",
+      "top_k": 50
+    },
+    {
+      "name": "VALUE_FOCUSED_TOP50",
+      "universe": "VALUE_READY",
+      "score": "equal_weight_earnings_yield_book_to_price_cash_flow_yield",
+      "factors": ["EARNINGS_YIELD", "BOOK_TO_PRICE", "FREE_CASH_FLOW_YIELD"],
+      "minimum_components": 2,
+      "top_k": 50
+    },
+    {
+      "name": "GROWTH_FOCUSED_TOP50",
+      "universe": "GROWTH_READY",
+      "score": "equal_weight_revenue_growth_profit_growth",
+      "factors": ["REVENUE_GROWTH", "PROFIT_GROWTH"],
+      "minimum_components": 2,
+      "top_k": 50
+    },
+    {
+      "name": "TECH_GROWTH_THEME_MULTI_FACTOR_TOP50",
+      "universe": "TECH_GROWTH_THEME",
+      "score": "fixed_equal_five_family_multi_factor",
+      "top_k": 50
+    }
+  ],
+  "factor_and_portfolio": {
+    "performance_admission_enabled": false,
+    "multi_factor_within_family": "fixed equal weight over available components",
+    "multi_factor_between_families": "fixed equal 20 percent each",
+    "focused_style_factor_weighting": "fixed equal weight over available components",
+    "cross_sectional_preprocess": "1pct_99pct winsorized point-in-time SW2021 L1 industry zscore with global fallback",
+    "stock_weighting": "equal",
+    "commission_rate": 0.0003,
+    "risk_overlays_enabled": false
+  },
+  "execution": {
+    "rebalance_frequency": "weekly last open session",
+    "primary_timing": "NEXT_SESSION_CLOSE",
+    "signal_information_cutoff": "decision_session_close",
+    "same_session_close_results_primary": false
+  },
+  "benchmarks": "each strategy is compared with the next-session equal-weight benchmark of its own point-in-time strategy universe",
+  "pre_registered_questions": [
+    "Can every strategy universe be reproduced only from the approved base universe and point-in-time data?",
+    "How wide and stable is each strategy universe?",
+    "Does each strategy beat its own universe benchmark after next-session execution and commission?",
+    "How do return, drawdown, turnover and relative performance differ across mandates?"
+  ],
+  "forbidden_actions": [
+    "change the 70 percent market-cap split after viewing returns",
+    "require positive value cash flow or positive growth after viewing returns",
+    "change the technology-growth industry list after viewing returns",
+    "change factor signs weights top_k dates cost or execution timing after viewing returns",
+    "select the best strategy universe as the default base universe",
+    "treat retrospective results as true forward evidence",
+    "approve live trading solely from this experiment"
+  ]
+}
