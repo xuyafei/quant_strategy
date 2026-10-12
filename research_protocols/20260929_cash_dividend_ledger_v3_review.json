@@ -1,0 +1,52 @@
+{
+  "policy": "CASH_ONLY_SAME_DAY_GROSS_V1",
+  "anchor_date": "2026-09-28",
+  "effective_date": "2026-09-29",
+  "anchor_manifest_sha256": "0339a4296a46e605e6783c287a8d851ebb33ac293f532a769ae7476ec4e9f9fc",
+  "old_code_hashes": {
+    "live/forward_ledger.py": "65b84713fed3e3605ce8a66597f1b4eb0ccc459ce9db58d699c11fa39e0d4d77",
+    "live/six_strategy_forward.py": "b547518bcb098d2b0bee668ff4c7c6cbdaed3086c515d0225e2a100ef8368027",
+    "live/board_rules.py": "a1659908ac6e32cbd8be1a2bc4c3101f2a9b937a26438c5975421c9e4c5c646e",
+    "live/order_builder.py": "7ddbfe08034240208ed1c9cc5d125bbc46f87d006d8eede7d8288cf315270c4c",
+    "live/order_precheck.py": "3e27a02a2bfb2b69c985ad9eaec4c372a10e4076cbf55e95d203b9c4584c7380",
+    "live/paper_runner.py": "00d7ef8ef1dca55f515e70200c16563d257eba9893d9b36ddf8ba97666484e50",
+    "live/broker.py": "84bed6b0a1010f3ef76cb03ad48550c609b58b2e5f5fc4cbbc837c790a53aef0",
+    "strategies/style.py": "cf2333077471f4183edd19a2134f5128081e4a55051cacd577e9652243a324b8",
+    "universe/dynamic.py": "bdce6983909ff566a16d97f73e7792e025ed19b292c903d68c75171afa32ffaa",
+    "universe/risk.py": "e15a56a3e475c46eb54990bd3df557d691f63df4ebb3f719039c90961e330500",
+    "universe/strategy.py": "fddd03f19a94cbc937aeff80b494198d043688e98217414ae98e53eebaff5c90",
+    "scripts/build_dynamic_universe_comparison.py": "b85c9858d12b94f93d0ea07e062653c52e231685a63fceb09e5aa74b863f6b4a"
+  },
+  "new_code_hashes": {
+    "live/account_state.py": "09a5e12d7348193446b8ff46e4addd7454966c6d1e0258ff9072be504332e87f",
+    "live/board_rules.py": "a1659908ac6e32cbd8be1a2bc4c3101f2a9b937a26438c5975421c9e4c5c646e",
+    "live/broker.py": "84bed6b0a1010f3ef76cb03ad48550c609b58b2e5f5fc4cbbc837c790a53aef0",
+    "live/cash_dividends.py": "26f5a4030edce619fd9ef24ad110ccbcc6f57d314bdc7dd007d86f6e54c90a05",
+    "live/forward_ledger.py": "e53cc3897be31d53111bb24125633222d5403c65d2898cd4220fb5dc22451906",
+    "live/forward_revision.py": "d4e86a6222d697fe408e8a567383f93d8ffd3a838a271f742492fd62d42562ed",
+    "live/order_builder.py": "7ddbfe08034240208ed1c9cc5d125bbc46f87d006d8eede7d8288cf315270c4c",
+    "live/order_precheck.py": "3e27a02a2bfb2b69c985ad9eaec4c372a10e4076cbf55e95d203b9c4584c7380",
+    "live/paper_runner.py": "00d7ef8ef1dca55f515e70200c16563d257eba9893d9b36ddf8ba97666484e50",
+    "live/six_strategy_forward.py": "b547518bcb098d2b0bee668ff4c7c6cbdaed3086c515d0225e2a100ef8368027",
+    "scripts/build_dynamic_universe_comparison.py": "b85c9858d12b94f93d0ea07e062653c52e231685a63fceb09e5aa74b863f6b4a",
+    "scripts/fetch_forward_actions.py": "af1944f13fb8f7de4fd0767980e571b353318ca8b0ae3978987ecc4e34472e6f",
+    "scripts/fetch_forward_market.py": "2e4a21fc302367c90dc7390023a61f5daee5f655ef78c5d28efd116e52cc0c43",
+    "scripts/run_forward_daily.py": "7cdb8745469a8e5a53f72bbcfd40b1999a7e6201691b716832fd5b88807703a3",
+    "scripts/upgrade_forward_dividends.py": "fb065399803e78581ce32520bb7a8857186a4be8e0db786e3ac67a5d7522b9e7",
+    "strategies/style.py": "cf2333077471f4183edd19a2134f5128081e4a55051cacd577e9652243a324b8",
+    "universe/dynamic.py": "bdce6983909ff566a16d97f73e7792e025ed19b292c903d68c75171afa32ffaa",
+    "universe/risk.py": "e15a56a3e475c46eb54990bd3df557d691f63df4ebb3f719039c90961e330500",
+    "universe/strategy.py": "fddd03f19a94cbc937aeff80b494198d043688e98217414ae98e53eebaff5c90"
+  },
+  "reason": "User authorized completion of the cash-dividend accounting repair after the 2026-09-29 corporate-action guard. Additive accounting revision only; stock selection, rebalance schedule, execution model and prior records unchanged.",
+  "authorization": "Current conversation: 继续完成吧",
+  "review_scope": "Only live/forward_ledger.py differs among original frozen code. New dividend, revision and daily retrieval modules explicitly fingerprinted.",
+  "validation": "325 unittest tests passed, including 10 new cash-dividend tests.",
+  "dividend_tax_policy": "GROSS_DIVIDEND_TAX_NOT_MODELED",
+  "limitations": [
+    "previous-session record date and same-day ex/payment cash only",
+    "stock distributions, rights issues and delayed payment remain blocked",
+    "no individual dividend tax or future tax liability modeled",
+    "accounting fix reviewed after observing the corporate action; no backdated freeze claim"
+  ]
+}

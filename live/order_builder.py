@@ -125,6 +125,7 @@ def build_order_plan(
     lot_size: int = 100,
     min_order_amount: float = 0.0,
     include_holds: bool = False,
+    board_rules: bool = False,
 ) -> pd.DataFrame:
     """
     将目标权重转换成订单计划。
@@ -170,6 +171,9 @@ def build_order_plan(
         current_value = current_shares * price
         target_value = account_value * target_weight
         target_shares = _round_target_shares(target_value, price, lot_size)
+        if board_rules:
+            from live.board_rules import target_shares as board_target_shares
+            target_shares = board_target_shares(symbol, target_value, price)
         delta_shares = target_shares - current_shares
         estimated_amount = abs(delta_shares) * price
 
@@ -190,7 +194,7 @@ def build_order_plan(
             delta_shares = 0
             estimated_amount = 0.0
 
-        if side == "HOLD" and target_weight > 0 and _round_target_shares(target_value, price, lot_size) == 0:
+        if side == "HOLD" and target_weight > 0 and target_shares == 0:
             reason = "target_value_below_lot"
 
         if side != "HOLD" or include_holds:

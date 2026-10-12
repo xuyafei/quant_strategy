@@ -132,6 +132,8 @@ class Settings:
     min_positions_exposure: float = 1.0
     # 订单生成：A 股默认 100 股一手；低于最小订单金额的调仓会被过滤，减少碎片订单。
     order_lot_size: int = 100
+    # Opt-in for the new forward ledger; legacy backtests remain unchanged.
+    order_board_rules: bool = False
     min_order_amount: float = 0.0
     # 订单预检查：买入后至少保留的现金缓冲。
     order_cash_buffer: float = 0.0

@@ -17,6 +17,8 @@
 
 ## 文档
 
+- **论文成果主分支集成**：[只读研究检查、验收结果与暂缓清单](docs/paper_research_merge.md) — 收益归因、时间检查、多重检验与CSCV；独立入口 `scripts/run_research_audit.py`，不改变六策略交易规则。
+- **每日持仓与交易记录（本地）**：[按日期查看六策略账户](output/six_strategy_forward_20260928/reports/daily_records/README.md) — 每日全部持仓、模拟成交、未成交及分红；生成方法见[操作手册](docs/forward_paper_daily.md)。
 - **项目介绍（MVP 工程）**：[docs/MVP_PROJECT_ARTICLE.md](docs/MVP_PROJECT_ARTICLE.md) — Quant Strategy 的定位、模块关系、默认全流程与主流程表、数据/因子/IC/融合/回测与后续扩展方向
 - **主流程与各模块**：[docs/FLOW_AND_MODULES.md](docs/FLOW_AND_MODULES.md)（含 Mermaid 流程图）
 - **工程总览（技术细节）**：[docs/ENGINEERING_OVERVIEW.md](docs/ENGINEERING_OVERVIEW.md)
@@ -472,6 +474,14 @@ python scripts/build_execution_feedback.py \
 ```
 
 脚本输出到 `output/execution_feedback/<strategy>/`，包括逐笔执行偏差、汇总表和 Markdown 报告。该步骤只分析真实执行结果，不修改纸面账户、不连接券商。
+
+### 六策略严格前向账本（第126篇）
+
+2026年9月29日新增显式审核的V3现金分红扩展：登记日权益、实施事件、现金流对账、重复入账保护和追加式代码版本记录。仅支持前一交易日登记、当日除息派息的纯现金事件，采用税前研究口径；其他公司行为仍暂停。见[分红与升级说明](docs/forward_cash_dividends.md)。
+
+六策略新增独立的 `live.forward_ledger`，复用现有股票池、因子、订单检查和模拟券商，但不使用旧回放账户充当前向收益。计划在执行日开盘前冻结；每日从上一交易日接续，六账户一次提交，缺失行情、重复日期和未处理公司行为均阻断。板块数量规则只在此新流程显式启用，历史回测默认行为不变。
+
+日常入口是 `scripts/run_forward_daily.py`，操作、目录和边界说明见 [六策略每日操作手册](docs/forward_paper_daily.md)。旧 `run_six_strategy_forward_paper.py` 仅保留历史状态查看，不再接受新建仓执行。新流程仍是佣金简化的收盘价格模型，不代表实盘放行，也没有自动安装定时任务。
 
 ### 每日调度入口
 

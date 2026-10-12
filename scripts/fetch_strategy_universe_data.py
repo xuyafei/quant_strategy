@@ -97,7 +97,12 @@ def _fetch_daily_basic_date(token: str, date_text: str, part_dir: Path) -> tuple
     return date_text, int(len(frame))
 
 
-def _fetch_industry_membership(token: str, data_dir: Path) -> tuple[Path, Path]:
+def _fetch_industry_membership(
+    token: str,
+    data_dir: Path,
+    *,
+    refresh: bool = False,
+) -> tuple[Path, Path]:
     classify_path = data_dir / "sw2021_l1_classify.csv"
     membership_path = data_dir / "sw2021_l1_membership.csv.gz"
     part_dir = data_dir / "strategy_parts" / "sw2021_membership"
@@ -119,7 +124,7 @@ def _fetch_industry_membership(token: str, data_dir: Path) -> tuple[Path, Path]:
     for code in sorted(classify[code_column].astype(str).unique()):
         for is_new in ("Y", "N"):
             path = part_dir / (code.replace(".", "_") + "_" + is_new + ".csv")
-            if not path.is_file():
+            if refresh or not path.is_file():
                 frame = _call_with_retry(
                     lambda c=code, flag=is_new: _pro(token).index_member_all(
                         l1_code=c, is_new=flag
@@ -172,6 +177,7 @@ def run(
     end_text: str,
     *,
     workers: int = 4,
+    refresh_industry: bool = False,
 ) -> dict[str, Path]:
     token = get_tushare_token()
     start = pd.Timestamp(start_text).normalize()
@@ -203,7 +209,11 @@ def run(
                 )
     daily_output = data_dir / "daily_basic_weekly.csv.gz"
     daily = _assemble_daily_basic(daily_part_dir, daily_output)
-    classify_path, membership_path = _fetch_industry_membership(token, data_dir)
+    classify_path, membership_path = _fetch_industry_membership(
+        token,
+        data_dir,
+        refresh=refresh_industry,
+    )
     print(
         "strategy_universe_data_complete dates=%d daily_rows=%d industries=%s"
         % (len(dates), len(daily), membership_path),
@@ -222,8 +232,19 @@ def main() -> int:
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument(
+        "--refresh-industry",
+        action="store_true",
+        help="重新请求全部 SW2021 一级行业成员区间，不复用本地成员分片",
+    )
     args = parser.parse_args()
-    for name, path in run(args.data_dir, args.start, args.end, workers=args.workers).items():
+    for name, path in run(
+        args.data_dir,
+        args.start,
+        args.end,
+        workers=args.workers,
+        refresh_industry=args.refresh_industry,
+    ).items():
         print("%s=%s" % (name, path))
     return 0
 

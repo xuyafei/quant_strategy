@@ -1,5 +1,9 @@
 # 工程总览（技术说明）
 
+论文研究只读扩展（2026-10-09）：`analysis.research_audit` 统一组装各自基准主动收益、`return_attribution` 收益回归、`research_statistics` 多重检验及 `selection_diagnostics` CSCV；独立入口 `scripts/run_research_audit.py`。`signal_asof` 与 `financial_asof` 提供新研究可调用的时间检查函数，不自动替换原因子。未接入 `main.py` 或前向交易自动门禁，原股票池、权重与执行逻辑不变。见[集成边界与验收](paper_research_merge.md)。
+
+前向账本V3扩展：`live.cash_dividends` 校验纯现金分红与登记权益；`scripts.fetch_forward_actions` 独立封存原始数据；`live.forward_revision` 与升级脚本追加审核版本，不覆盖原会话摘要；`run_forward_daily` 在结算前取证，`forward_ledger` 将税前分红纳入现金流对账和原子提交。策略不变，非同日派息、送转及无法解释的复权变化继续暂停。见[边界与税费口径](forward_cash_dividends.md)。
+
 > 本文档描述 **quant_strategy** 仓库的**当前实现**、**数据与计算约定**、**MVP 主流程与明确非 MVP 的占位**，便于隔段时间回到项目时快速对齐。  
 > 与 [INTERFACE_AND_CONTRACTS.md](./INTERFACE_AND_CONTRACTS.md)（接口契约）、[CODE_STRUCTURE.md](./CODE_STRUCTURE.md)（目录职责）、[FLOW_AND_MODULES.md](./FLOW_AND_MODULES.md)（主流程与各模块说明）互补；**代码变更后请同步更新本节对应段落**。
 

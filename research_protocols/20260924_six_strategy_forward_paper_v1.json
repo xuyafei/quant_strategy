@@ -1,0 +1,63 @@
+{
+  "protocol_id": "SIX_STRATEGY_FORWARD_PAPER_V1",
+  "frozen_at": "2026-09-24T15:00:00+08:00",
+  "status": "FORWARD_PAPER_ONLY_NOT_LIVE_APPROVED",
+  "parent_strategy_protocol": {
+    "path": "research_protocols/20260923_strategy_universe_profiles_v1.json",
+    "sha256": "216cb1a3b5698f7d3db16552250bfd09af42d70ff36e7b1b2aaca876a40bf69d"
+  },
+  "objective": "Run six isolated strategy-universe portfolios in parallel using only information available before each simulated execution session.",
+  "accounts": {
+    "count": 6,
+    "initial_cash_each_cny": 1000000,
+    "capital_shared_between_strategies": false,
+    "broker": "simulated_broker",
+    "real_orders_allowed": false
+  },
+  "strategies": [
+    "BASE_V2_MULTI_FACTOR_TOP50",
+    "LARGE_CAP_MULTI_FACTOR_TOP50",
+    "MID_SMALL_CAP_MULTI_FACTOR_TOP50",
+    "VALUE_FOCUSED_TOP50",
+    "GROWTH_FOCUSED_TOP50",
+    "TECH_GROWTH_THEME_MULTI_FACTOR_TOP50"
+  ],
+  "portfolio": {
+    "holdings": 50,
+    "stock_weighting": "equal",
+    "commission_rate": 0.0003,
+    "lot_size": 100,
+    "rebalance_frequency": "weekly after the final completed session of each W-FRI week",
+    "execution_timing": "next open session close",
+    "between_rebalances": "hold existing target"
+  },
+  "bootstrap": {
+    "signal_date": "2026-09-23",
+    "scheduled_execution_date": "2026-09-24",
+    "reason": "Start the paper accounts immediately from the latest complete provider session; subsequent target changes follow the weekly schedule.",
+    "must_not_fill_without_exact_execution_date_price": true,
+    "exclude_same_close_lookahead": true
+  },
+  "execution_gates": {
+    "require_exact_trade_date_close": true,
+    "require_trade_status_for_every_target_or_held_symbol": true,
+    "block_suspended_orders": true,
+    "block_limit_up_buys": true,
+    "block_limit_down_sells": true,
+    "apply_active_manual_risk_blacklist": true,
+    "preserve_base_universe_hard_risk_exclusions": true,
+    "duplicate_run_blocked_by_default": true
+  },
+  "evidence_windows": {
+    "technical_acceptance_open_sessions": 5,
+    "first_engineering_review_open_sessions": 20,
+    "preliminary_strategy_review_open_sessions": 60
+  },
+  "forbidden_actions": [
+    "backfill a missing execution price with a later price and label it forward",
+    "share cash or positions between strategy accounts",
+    "change factor definitions, signs, weights, top_k or universe rules after seeing paper results",
+    "treat bootstrap setup or retrospective backtests as forward returns",
+    "send real broker orders"
+  ]
+}

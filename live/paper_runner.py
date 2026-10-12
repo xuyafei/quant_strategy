@@ -163,6 +163,7 @@ def run_daily_paper_trade(
         lot_size=int(settings.order_lot_size),
         min_order_amount=float(settings.min_order_amount),
         include_holds=False,
+        board_rules=settings.order_board_rules,
     )
     checks = precheck_order_plan(
         orders,
@@ -173,6 +174,8 @@ def run_daily_paper_trade(
         lot_size=int(settings.order_lot_size),
         min_order_amount=float(settings.min_order_amount),
         cash_buffer=float(settings.order_cash_buffer),
+        board_rules=settings.order_board_rules,
+        commission_rate=float(settings.commission_rate) if settings.order_board_rules else 0.0,
     )
     broker_orders = pd.DataFrame()
     if mode == EXECUTION_MODE_SIMULATED_BROKER:

@@ -117,6 +117,8 @@ def precheck_order_plan(
     min_order_amount: float = 0.0,
     cash_buffer: float = 0.0,
     block_blacklisted: bool = True,
+    board_rules: bool = False,
+    commission_rate: float = 0.0,
 ) -> pd.DataFrame:
     """
     检查订单计划是否满足基础执行约束。
@@ -192,7 +194,12 @@ def precheck_order_plan(
             reasons.append("invalid_amount")
         if side in {"BUY", "SELL"} and min_order_amount > 0 and amount < min_order_amount:
             reasons.append("below_min_order_amount")
-        if side == "BUY" and abs(delta) % int(lot_size) != 0:
+        if board_rules and side in {"BUY", "SELL"}:
+            from live.board_rules import quantity_error
+            error = quantity_error(symbol, side, abs(delta), available_shares)
+            if error:
+                reasons.append(error)
+        elif side == "BUY" and abs(delta) % int(lot_size) != 0:
             reasons.append("not_lot_size")
         if suspended and side in {"BUY", "SELL"}:
             reasons.append("suspended")
@@ -202,7 +209,7 @@ def precheck_order_plan(
             reasons.append("limit_down_blocks_sell")
         if side == "SELL" and abs(delta) > available_shares:
             reasons.append("insufficient_available_shares")
-        if side == "BUY" and cash_now - amount < cash_buffer:
+        if side == "BUY" and cash_now - amount * (1 + commission_rate) < cash_buffer:
             reasons.append("insufficient_cash")
         if block_blacklisted and is_blacklisted and side in {"BUY", "SELL"}:
             reasons.append("risk_blacklist")
@@ -210,9 +217,9 @@ def precheck_order_plan(
         status = "PASS" if not reasons else "BLOCK"
         if status == "PASS":
             if side == "SELL":
-                cash_now += amount
+                cash_now += amount * (1 - commission_rate)
             elif side == "BUY":
-                cash_now -= amount
+                cash_now -= amount * (1 + commission_rate)
 
         rows.append(
             {
