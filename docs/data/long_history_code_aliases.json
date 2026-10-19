@@ -1,0 +1,23 @@
+{
+  "scope": "Historical identity evidence only; raw codes are not rewritten and price series are not spliced",
+  "aliases": [
+    {
+      "old_code": "000022.SZ",
+      "new_code": "001872.SZ",
+      "effective_date": "20181226",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2018-12-26/1205690369.PDF"
+    },
+    {
+      "old_code": "000043.SZ",
+      "new_code": "001914.SZ",
+      "effective_date": "20191216",
+      "source_url": "https://www.szse.cn/disclosure/notice/general/t20191211_572534.html"
+    },
+    {
+      "old_code": "300114.SZ",
+      "new_code": "302132.SZ",
+      "effective_date": "20250217",
+      "source_url": "https://static.cninfo.com.cn/finalpage/2025-02-07/1222485220.PDF"
+    }
+  ]
+}

@@ -1205,6 +1205,14 @@ def run_single_backtest(
     k = int(top_k if top_k is not None else settings.top_k)
     if k < 1:
         raise ValueError("top_k 须 >= 1")
+    # Opt-in only; absent option leaves the legacy path byte-for-byte unchanged.
+    rank_buffer_exit = kwargs.get("rank_buffer_exit")
+    if rank_buffer_exit is not None and (
+        isinstance(rank_buffer_exit, bool)
+        or not isinstance(rank_buffer_exit, (int, np.integer))
+        or rank_buffer_exit < k
+    ):
+        raise ValueError("rank_buffer_exit 须为不小于 top_k 的整数")
 
     prices_wide = prices_to_wide_close(
         prices,
@@ -1304,6 +1312,7 @@ def run_single_backtest(
     n_rebalances = 0
     rebalance_log: List[Dict[str, Any]] = []
     decision_log: List[Dict[str, Any]] = []
+    rank_buffer_log: List[Dict[str, Any]] = []
     prev_target_weights: Dict[str, float] = {}
 
     for dt in prices_wide.index:
@@ -1469,6 +1478,17 @@ def run_single_backtest(
                 )
             continue
 
+        if rank_buffer_exit is not None:
+            from strategies.holding_buffer import select_buffer
+            actual_held = list(shares.index[(shares * valuation_px).fillna(0.0) > 1e-10])
+            # Eligibility precedes retention; existing weight/risk filters still follow.
+            # A too-small eligible universe is an explicit error for this opt-in rule.
+            picks = select_buffer(sc.reindex(eligible_symbols), actual_held, k, rank_buffer_exit)
+            from strategies.holding_buffer import ordered_scores
+            rank = {s: i+1 for i,s in enumerate(ordered_scores(sc.reindex(eligible_symbols)).index)}
+            rank_buffer_log.extend({"date": dt, "symbol": s, "signal_rank": rank[s],
+                                    "was_actually_held": s in actual_held,
+                                    "reason": "retained" if s in actual_held else "entry"} for s in picks)
         selected_picks = list(picks)
         pick_weights, w_label = _weights_for_rebalance(
             prices_wide, selected_picks, dt, effective_settings
@@ -1685,4 +1705,7 @@ def run_single_backtest(
         "rebalance_log": rebalance_log,
         "decision_log": decision_log,
     }
+    if rank_buffer_exit is not None:
+        meta["rank_buffer_exit"] = rank_buffer_exit
+        meta["rank_buffer_log"] = rank_buffer_log
     return nav, meta

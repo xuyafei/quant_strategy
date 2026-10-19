@@ -167,5 +167,17 @@ def render_markdown(report):
                   f"含并列的PBO {selection['pbo_inclusive']:.2%}。", '']
     else:
         lines += [f"未评估：{selection.get('reason', '本次未要求CSCV检查')}。", '']
+    if 'diagnostics' in report:
+        extra = report['diagnostics']
+        lines += ['## 成交成本与组合诊断', '', '只读计算，不自动调整权重；未提供的输入不代表检查通过。', '']
+        for strategy, row in extra.get('costs', {}).items():
+            lines += [f"- {strategy}：成交记录 {row['fill_records']} 条；累计双边换手 {row['cumulative_two_way_turnover']:.4f} 倍；"
+                      f"记录费用合计 {row['fees']:.6f}（输入账本货币单位）。订单数量不能从成交记录推断。"]
+        if 'allocations' in extra:
+            p = extra['allocations']
+            lines += ['', f"持仓类型：{extra['allocation_kind']}；{len(p['snapshots'])} 个组合快照，"
+                      f"{len(p['overlap'])} 个两两比较。现金、股票内归一化有效持仓数、重叠资金和行业暴露详见 report.json。", '']
+        if 'return_correlations' in extra:
+            lines += ['原始收益及相对各自基准的主动收益相关性见 report.json；无方差时为 null，不伪造相关性。', '']
     lines += ['## 解释边界', ''] + ['- '+s for s in report['warnings']] + ['']
     return '\n'.join(lines)

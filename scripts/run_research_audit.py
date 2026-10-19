@@ -26,7 +26,7 @@ def run(spec_path, output):
     spec = json.loads(spec_bytes)
     inputs = {str(spec_path): hashlib.sha256(spec_bytes).hexdigest()}
 
-    def load(entry):
+    def load(entry, *, indexed=True):
         path = (spec_path.parent / entry['path']).resolve()
         data = path.read_bytes()
         checksum = hashlib.sha256(data).hexdigest()
@@ -37,7 +37,7 @@ def run(spec_path, output):
         header = next(csv.reader(io.StringIO(data.decode('utf-8-sig'))))
         if len(header) != len(set(header)) or 'date' not in header:
             raise ValueError('unique CSV headers and a date column required')
-        return pd.read_csv(io.BytesIO(data), index_col='date', parse_dates=['date'])
+        return pd.read_csv(io.BytesIO(data), index_col='date' if indexed else None, parse_dates=['date'])
 
     nav = load(spec['nav'])
     factors = load(spec['factors']) if 'factors' in spec else None
@@ -46,12 +46,39 @@ def run(spec_path, output):
     if not spec.get('family_description') or not spec.get('cost_convention'):
         raise ValueError('declare candidate family and cost convention')
     result = build_research_audit(nav, spec['pairs'], factors=factors, **spec.get('options', {}))
+    if 'diagnostics' in spec:
+        from analysis.portfolio_diagnostics import cost_summary, portfolio_diagnostics, return_correlations
+        extra = spec['diagnostics']
+        if not isinstance(extra, dict) or set(extra)-{'trades', 'allocations', 'allocation_kind', 'return_correlations'}:
+            raise ValueError('unknown diagnostics input')
+        result['diagnostics'] = {}
+        for key in ['trades', 'allocations']:
+            if key not in extra:
+                continue
+            frame = load(extra[key], indexed=False)
+            if frame.date.isna().any() or not frame.date.isin(nav.index).all():
+                raise ValueError('diagnostic dates must belong to declared NAV interval')
+            if key == 'trades':
+                if 'strategy' not in frame or frame.strategy.isna().any() or not frame.strategy.isin(spec['pairs']).all():
+                    raise ValueError('trades need declared strategy names')
+                result['diagnostics']['costs'] = {s:cost_summary(g) for s,g in frame.groupby('strategy')}
+            else:
+                if extra.get('allocation_kind') not in {'target', 'actual'}:
+                    raise ValueError('declare target or actual allocation_kind')
+                if 'strategy' not in frame or not frame.strategy.isin(spec['pairs']).all():
+                    raise ValueError('allocation strategies must be declared')
+                result['diagnostics']['allocations'] = portfolio_diagnostics(frame)
+                result['diagnostics']['allocation_kind'] = extra['allocation_kind']
+        if extra.get('return_correlations'):
+            result['diagnostics']['return_correlations'] = return_correlations(nav, spec['pairs'])
     result['input_declarations'] = {k: spec[k] for k in
                                    ['frequency', 'return_units', 'family_description', 'cost_convention']}
     result['input_hashes'] = inputs
     names = ['analysis/research_audit.py', 'analysis/research_statistics.py',
              'analysis/return_attribution.py', 'analysis/selection_diagnostics.py',
              'scripts/run_research_audit.py']
+    if 'diagnostics' in spec:
+        names.append('analysis/portfolio_diagnostics.py')
     result['code_hashes'] = {name: digest(ROOT / name) for name in names}
     encoded = json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False)
     markdown = render_markdown(result)

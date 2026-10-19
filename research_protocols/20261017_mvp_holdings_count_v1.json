@@ -1,0 +1,46 @@
+{
+  "id": "MVP_HOLDINGS_COUNT_20261017_V1",
+  "parent_protocol": "research_protocols/20260923_strategy_universe_profiles_v1.json",
+  "data_source": "data/all_a_history_20100101_20261015",
+  "financial_supplement": "data/mvp_history_finance_20261017/fina_indicator_mvp.csv.gz",
+  "evaluation_start": "2011-01-01",
+  "evaluation_end": "2026-10-15",
+  "k_values": [10, 15, 20, 30, 50],
+  "reference_k": 20,
+  "current_control_k": 50,
+  "factor_changes": false,
+  "ic_weighting": false,
+  "ranking_ties": "score descending, symbol ascending; fixed before execution quotes",
+  "schedule": "last open session of completed W-FRI weeks; execute next open session close",
+  "insufficient_names": "if fewer than 50 scored names, all K arms of that strategy hold; never substitute execution-day names",
+  "commission_rate": 0.0003,
+  "stress_one_way_cost": 0.0013,
+  "execution": "fractional-share research replay; missing quotes block trades, carried prices value existing shares; retain unfilled target cash; not the integer-lot forward ledger",
+  "random_subset": {
+    "repeats": 100,
+    "seed": 20261017,
+    "pool": "top min(100, available scored names) at each signal, minimum 50",
+    "method": "fresh seeded permutation each signal and replicate, nested first K across all five K; replay entire paths with fees",
+    "interpretation": "conditional selection sensitivity, NOT confidence intervals or independent OOS trials"
+  },
+  "comparison_rules": {
+    "similar_sharpe_absolute_gap": 0.10,
+    "meaningful_drawdown_reduction_absolute": 0.03,
+    "meaningful_random_cagr_width_reduction_fraction": 0.10,
+    "k15_close_to_k20_sharpe_gap": 0.05,
+    "k15_close_to_k20_drawdown_gap": 0.02,
+    "k15_random_width_ratio_limit": 1.10,
+    "interpretation": "descriptive decision aids, not statistical significance or automatic live approval"
+  },
+  "subperiods": [["2011-01-01", "2015-12-31"], ["2016-01-01", "2020-12-31"], ["2021-01-01", "2026-10-15"]],
+  "excluded_transition_codes": ["000022.SZ", "001872.SZ", "000043.SZ", "001914.SZ", "300114.SZ", "302132.SZ"],
+  "limitations": [
+    "current provider snapshots filtered by announcement date are not original vintage financial archives",
+    "historical industry intervals are used as supplied; no backward fill of today's industry; incomplete taxonomy/version history must be reported",
+    "missing financial factors retain production available-component behavior; do not silently manufacture a replacement factor",
+    "FREE_CASH_FLOW_YIELD is the existing operating cash flow per share / price proxy, not FCFF or FCFE yield",
+    "no historical limit-up/down, full suspension feed, stamp tax schedules, minimum fees, lots or market impact simulation",
+    "carried marks of permanently unquoted holdings can overstate liquidation value; report stranded positions and zero-value terminal sensitivity",
+    "retrospective diagnostic, not a new unseen holdout; forward account configuration unchanged"
+  ]
+}

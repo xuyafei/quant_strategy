@@ -1,0 +1,51 @@
+{
+  "id": "SIX_STRATEGY_IC_COMPARISON_20261018_V1",
+  "parent_protocol": "research_protocols/20260923_strategy_universe_profiles_v1.json",
+  "prior_replay": "output/mvp_holdings_count_20261017_complete_factors",
+  "data_source": "data/all_a_history_20100101_20261015",
+  "financial_supplement": "data/mvp_history_finance_20261017/fina_indicator_mvp.csv.gz",
+  "evaluation_start": "2011-01-01",
+  "evaluation_end": "2026-10-15",
+  "variants": ["FIXED", "IC_SHRUNK"],
+  "k_values": [10, 15, 20, 30, 50],
+  "primary_comparison": "FIXED K50 versus IC_SHRUNK K50 per strategy",
+  "secondary_comparison": "all five K in both variants, K20 preregistered observation focus; no automatic best-K selection",
+  "ic": {
+    "statistic": "daily pairwise-complete Spearman Rank IC of the production-preprocessed factor",
+    "universe": "each strategy's historically eligible universe, never today's survivors",
+    "holding_sessions": 5,
+    "label": "adjusted_close[d+6] / adjusted_close[d+1] - 1; no quote filling",
+    "maturity": "label exit date strictly earlier than weekly signal date",
+    "lookback_matured_sessions": 252,
+    "minimum_valid_ic_days_per_factor": 120,
+    "minimum_cross_section_names": 30,
+    "fixed_share": 0.5,
+    "weight_rule": "within each family: 0.5 equal + 0.5 normalized positive trailing mean IC; no ICIR, sign flip, or extra temporal smoothing",
+    "fallback": "entire family equal if any component has insufficient IC history, or all mean ICs nonpositive; single-component families always 1",
+    "family_budgets": "five categories remain 20 percent each; focused value/growth each use one family",
+    "overlapping_labels": "5-session daily outcomes overlap; 120 rows are not 120 independent observations; no naive significance claim"
+  },
+  "controls": {
+    "no_news_announcements_ml": true,
+    "performance_admission": false,
+    "factor_directions": "unchanged",
+    "stock_weights": "equal at rebalance",
+    "schedule": "last open session of completed W-FRI week; next open close execution",
+    "common_dates": "same 2011-2026 calendar, all arms start in cash; IC insufficient history falls back to FIXED and is reported",
+    "insufficient_names": "if either variant scores fewer than 50 names, both variants and all K hold that signal; report every skip",
+    "benchmark": "own PIT eligible universe equal-weight, same signal dates and cost model"
+  },
+  "commission_rate": 0.0003,
+  "stress_one_way_cost": 0.0013,
+  "subperiods": [["2011-01-01", "2015-12-31"], ["2016-01-01", "2020-12-31"], ["2021-01-01", "2026-10-15"]],
+  "execution": "reuse prior validated fractional-share adjusted-price research replay, not integer-lot live simulation",
+  "limitations": [
+    "already-seen history; not an independent unseen holdout or live approval",
+    "current provider financial snapshot by announcement date, not original vintage archive",
+    "historical industry interval taxonomy coverage incomplete",
+    "cash flow factor remains ocfps/close proxy, not true free cash flow",
+    "minimum fees, stamp tax history, lots, market impact, full suspension and price-limit execution not simulated",
+    "missing quotes block fills and carry prior marks; terminal stranded positions zero-value sensitivity must be reported",
+    "do not change daily forward accounts or choose a winner by full-sample maximum return"
+  ]
+}

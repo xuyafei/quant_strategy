@@ -18,6 +18,7 @@
 ## 文档
 
 - **论文成果主分支集成**：[只读研究检查、验收结果与暂缓清单](docs/paper_research_merge.md) — 收益归因、时间检查、多重检验与CSCV；独立入口 `scripts/run_research_audit.py`，不改变六策略交易规则。
+- **第二季论文集成**：[代码入口、六策略缓冲对照与验收记录](docs/paper_research_season02_merge.md) — 成本／组合诊断、特征匹配、年度与标签时间检查、默认关闭的持仓缓冲；不改变现有前向账户。
 - **每日持仓与交易记录（本地）**：[按日期查看六策略账户](output/six_strategy_forward_20260928/reports/daily_records/README.md) — 每日全部持仓、模拟成交、未成交及分红；生成方法见[操作手册](docs/forward_paper_daily.md)。
 - **项目介绍（MVP 工程）**：[docs/MVP_PROJECT_ARTICLE.md](docs/MVP_PROJECT_ARTICLE.md) — Quant Strategy 的定位、模块关系、默认全流程与主流程表、数据/因子/IC/融合/回测与后续扩展方向
 - **主流程与各模块**：[docs/FLOW_AND_MODULES.md](docs/FLOW_AND_MODULES.md)（含 Mermaid 流程图）

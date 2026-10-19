@@ -118,6 +118,27 @@ class ResearchAuditTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'headers'):
                 run(config, root/'out')
 
+    def test_optional_diagnostics_real_inputs_and_hash_guard(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);self.nav().to_csv(root/'nav.csv',index_label='date')
+            weights=pd.DataFrame(dict(date=['2025-01-01']*4,strategy=['a','a','b','b'],
+                symbol=['x','y','y','z'],weight=[.5]*4))
+            weights.to_csv(root/'weights.csv',index=False)
+            trades=pd.DataFrame(dict(date=['2025-01-01'],strategy=['a'],symbol=['x'],side=['BUY'],
+                notional=[.5],fee=[.00015],shares_before=[0.],shares_after=[.05],price=[10.],pre_nav=[1.]))
+            trades.to_csv(root/'trades.csv',index=False)
+            def entry(name):return dict(path=name,sha256=hashlib.sha256((root/name).read_bytes()).hexdigest())
+            spec=dict(nav=entry('nav.csv'),pairs=self.pairs,frequency='daily',return_units='decimal',
+                family_description='two declared test candidates',cost_convention='fee provided',
+                diagnostics=dict(trades=entry('trades.csv'),allocations=entry('weights.csv'),allocation_kind='target',return_correlations=True))
+            (root/'spec.json').write_text(json.dumps(spec))
+            result=run(root/'spec.json',root/'out')
+            self.assertEqual(result['diagnostics']['allocations']['overlap'][0]['overlap_names'],1)
+            self.assertEqual(result['diagnostics']['costs']['a']['fill_records'],1)
+            self.assertFalse(result['changes_trading_rules'])
+            (root/'trades.csv').write_text('changed')
+            with self.assertRaisesRegex(ValueError,'hash'):run(root/'spec.json',root/'other')
+
 
 if __name__ == '__main__':
     unittest.main()

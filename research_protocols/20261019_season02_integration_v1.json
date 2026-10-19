@@ -1,0 +1,19 @@
+{
+  "id": "SEASON02_SELECTIVE_INTEGRATION_V1",
+  "date": "2026-10-19",
+  "source": "output/six_strategy_ic_comparison_20261018",
+  "prior_prices": "output/mvp_holdings_count_20261017_complete_factors/prices.npz",
+  "baseline": "archived FIXED K50 for each of six strategies; exact archived signal availability",
+  "candidate": "retain actual eligible holdings within rank75; fill vacancies from top50",
+  "top_k": 50,
+  "exit_rank": 75,
+  "fee": 0.0003,
+  "stress_fee": 0.0013,
+  "evaluation": "same archived calendar through 2026-10-15; 2011-01-04 cash start",
+  "subperiods": [["2011-01-04", "2015-12-31"], ["2016-01-01", "2020-12-31"], ["2021-01-01", "2026-10-15"]],
+  "execution": "next market close, fractional shares, missing fills blocked, all missing nonempty targets HOLD; explicit CASH separate",
+  "constraints": "inherit fixed scores and eligible pools from archived six-strategy experiment; no extra live restrictions claimed",
+  "claims": "no parameter search, no independent holdout, no live approval, no forward-ledger writes",
+  "matching_validation": "reconstruct paper11 six quality strategy 27-cell comparator weights and replay; not claim six MVP matching complete",
+  "time_validation": "unit/negative tests and archived label-boundary checks; not a retrospective certification of all MVP factors"
+}

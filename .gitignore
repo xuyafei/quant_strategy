@@ -14,6 +14,8 @@ data/*.sqlite3
 data/csi300_pit_*/
 data/all_a_dynamic_*/
 data/all_a_forward_*/
+data/all_a_history_*/
+data/mvp_history_finance_*/
 
 # 原创内容稿：本地保留，不进入公开仓库
 docs/articles/

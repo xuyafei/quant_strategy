@@ -1,0 +1,19 @@
+{
+  "id": "SIX_STRATEGY_PURE_IC_20261018_V1",
+  "source_experiment": "output/six_strategy_ic_comparison_20261018",
+  "variants": ["FIXED", "IC_SHRUNK", "PURE_IC"],
+  "k_values": [10, 15, 20, 30, 50],
+  "lookback": 252,
+  "minimum_ic_days": 120,
+  "weight_rule": "Across all configured factors of each strategy: max(trailing mean matured RankIC,0), set insufficient-history factors to zero, normalize once globally. No fixed share, family budget, floor, cap, smoothing or negative sign inversion.",
+  "score_rule": "Direct blend of individual production-preprocessed factor scores; available-weight renormalization; no second category zscore. Preserve focused raw minimum-component requirement.",
+  "zero_weight_action": "Cash target at next scheduled execution: sell only quoted positions; unquoted shares remain marked, retry on later scheduled cash targets. No equal fallback.",
+  "signal_calendar": "Use each strategy's original valid control signal dates. Missing original eligibility holds all arms. Pure score fewer than 50 names holds pure arm at every K and is disclosed.",
+  "main_start": "First common original-valid weekly signal at which every configured factor in all six strategies has at least 120 matured IC days and each pure strategy has positive aggregate weight and at least 50 scored stocks. Start all arms from cash on that signal date; next open close execution. Determined from past-only readiness, not performance.",
+  "supplement": "Also replay PURE_IC over original full calendar; preserve original FIXED/IC_SHRUNK results verbatim. Early pure cash is not presented as a fair performance improvement.",
+  "primary": "Same K50 three-way comparison; K20 and all five K are sensitivity checks, not best-K optimization.",
+  "cost": 0.0003,
+  "stress_cost": 0.0013,
+  "inherit": "Source experiment factor definitions/directions, own PIT universes, 5-session next-close labels strictly matured before signal, weekly next-close fractional execution and data limitations unchanged. No news alpha or ML. No live/paper-account changes.",
+  "interpretation": "Positive-IC clipping is an implicit dynamic factor selection, not the former pass/watch/fail system. This is retrospective seen-history research, not independent holdout or live approval. Daily overlapping 5-session IC observations are not independent. Full execution friction is not simulated."
+}
